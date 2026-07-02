@@ -14,6 +14,7 @@ export const SPAWN_POINTS = [
   new THREE.Vector3(15, 1, 0),
   new THREE.Vector3(-15, 1, 0),
   new THREE.Vector3(0, 1, 15),
+  new THREE.Vector3(0, 1, -15),
 ];
 
 // Returns the spawn point farthest from all live (occupied) positions.
