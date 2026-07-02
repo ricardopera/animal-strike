@@ -15,7 +15,6 @@ import { TargetEntity } from '../player/TargetEntity.js';
 import { Crosshair } from '../ui/Crosshair.js';
 import { Hud } from '../ui/Hud.js';
 import { CharacterView } from '../player/CharacterView.js';
-import { ANIMAL_IDS } from '../config/Animals.js';
 
 export class Game {
   constructor(canvas) {
