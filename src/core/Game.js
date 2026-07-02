@@ -14,6 +14,8 @@ import { HitSparkPool } from '../fx/HitMarker.js';
 import { TargetEntity } from '../player/TargetEntity.js';
 import { Crosshair } from '../ui/Crosshair.js';
 import { Hud } from '../ui/Hud.js';
+import { CharacterView } from '../player/CharacterView.js';
+import { ANIMAL_IDS } from '../config/Animals.js';
 
 export class Game {
   constructor(canvas) {
@@ -58,6 +60,18 @@ export class Game {
       new TargetEntity(this.scene, this.colliders, new THREE.Vector3(-8, 3, -10)),
       new TargetEntity(this.scene, this.colliders, new THREE.Vector3(8, 3, -10)),
     ];
+
+    // Character views: local player (hidden — first person) + animal skins on the dummies.
+    this.player.view = new CharacterView(this.scene);
+    this.player.view.setAnimal('FOX');
+    this.player.view.setWeapon(this.player.loadout.primary);
+    this.player.view.setVisible(false);
+    this.targetAnimals = ['WOLF', 'PANDA', 'TIGER'];
+    this.targets.forEach((t, i) => {
+      t.view = new CharacterView(this.scene);
+      t.view.setAnimal(this.targetAnimals[i]);
+      t.view.setWeapon('AR');
+    });
 
     // HUD + crosshair (DOM overlay)
     const uiRoot = document.getElementById('ui');
@@ -124,6 +138,15 @@ export class Game {
     this.flashes.update(realDt);
     this.sparks.update(realDt);
 
+    // Sync dummy character views to their positions.
+    for (const t of this.targets) {
+      if (t.view) {
+        t.view.setPosition(t.position.x, t.position.y, t.position.z);
+        const speed = Math.hypot(t.vel ? t.vel.x : 0, t.vel ? t.vel.z : 0);
+        t.view.update(realDt, speed, 0, 0);
+      }
+    }
+
     // Render: position camera at eye, oriented by yaw/pitch
     const eye = eyePosition(this.player);
     this.camera.position.copy(eye);
@@ -172,6 +195,7 @@ export class Game {
       if (best.kind === 'enemy') {
         const dmg = applyFalloff(def.damage, best.dist, def.falloffStart, def.falloffEnd);
         best.target.takeDamage(dmg);
+        if (!best.target.alive && best.target.view) best.target.view.setVisible(false);
         this.sparks.spawn(best.point, new THREE.Vector3(0, 1, 0), 0xff3344);
       } else {
         this.sparks.spawn(best.point, new THREE.Vector3(0, 1, 0), 0xffd24a);
