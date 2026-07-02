@@ -14,6 +14,7 @@ import { HitSparkPool } from '../fx/HitMarker.js';
 import { TargetEntity } from '../player/TargetEntity.js';
 import { Crosshair } from '../ui/Crosshair.js';
 import { Hud } from '../ui/Hud.js';
+import { MainMenu } from '../ui/MainMenu.js';
 import { CharacterView } from '../player/CharacterView.js';
 
 export class Game {
@@ -78,9 +79,11 @@ export class Game {
     this.crosshair = new Crosshair(uiRoot);
     this.hud.setWeapon(this.weapon.def.name);
 
-    // Input
+    // Input + main menu (pointer lock is requested on PLAY click — a real user gesture)
     this.input = new InputState(canvas);
-    this.input.requestPointerLock();
+    this.menu = new MainMenu(document.getElementById('ui'), {
+      onStart: ({ animal, weapon }) => this.startMatch(animal, weapon),
+    });
 
     // Loop
     this.fixed = new FixedTimestep(1 / 60);
@@ -107,6 +110,16 @@ export class Game {
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
+  }
+
+  startMatch(animalId, weaponId) {
+    this.player.loadout.primary = weaponId;
+    this.player.view.setAnimal(animalId);
+    this.player.view.setWeapon(weaponId);
+    this.weapon = new WeaponController(WEAPONS[weaponId]);
+    this.weapon.fireCallback = () => this.pendingShots.push({});
+    this.hud.setWeapon(this.weapon.def.name);
+    this.input.requestPointerLock();
   }
 
   frame(realDt) {
