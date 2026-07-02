@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 
+const _rayHit = new THREE.Vector3();
+
 // Axis-aligned bounding boxes only. Collision resolution is axis-separated.
 export class ColliderStore {
   constructor() {
@@ -49,7 +51,7 @@ export class ColliderStore {
           if (halfH + (resolved.y - (resolved.y)) < (minY + maxY) / 2) {
             // player center below box center -> push down (we landed on top -> push up actually)
           }
-          // Determine direction: if player feet are above box center, push up; else push down.
+          // Determine direction: if player center is above box center, push up; else push down.
           if (resolved.y + halfH > (minY + maxY) / 2) {
             resolved.y = maxY; // land on top
             resolved.onGround = true;
@@ -68,16 +70,20 @@ export class ColliderStore {
     }
     return resolved;
   }
-  // Ray vs boxes; returns nearest hit distance t and the box, or null.
+  /**
+   * Ray vs axis-aligned boxes. Returns the nearest hit within maxDist, or null.
+   * NOTE: `dir` MUST be a normalized (unit) vector — the returned `dist` and the
+   * maxDist comparison are only meaningful in world units when dir is unit-length.
+   */
   raycast(origin, dir, maxDist = 1000) {
     const ray = new THREE.Ray(origin, dir);
     let best = null;
     for (const box of this.boxes) {
-      const hit = ray.intersectBox(box, new THREE.Vector3());
+      const hit = ray.intersectBox(box, _rayHit);
       if (hit) {
         const dist = origin.distanceTo(hit);
         if (dist <= maxDist && (!best || dist < best.dist)) {
-          best = { dist, point: hit, box };
+          best = { dist, point: hit.clone(), box };
         }
       }
     }
