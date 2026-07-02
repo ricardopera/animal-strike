@@ -30,3 +30,26 @@ export function selectTarget(bot, enemies, colliderStore) {
   }
   return best;
 }
+
+// Smoothly turn current yaw/pitch toward a world-space aim point.
+// current = {yaw, pitch}, aimWorldPoint = [x,y,z], fromPoint = [x,y,z].
+export function turnToward(current, aimWorldPoint, fromPoint, turnSpeed, dt) {
+  const dx = aimWorldPoint[0] - fromPoint[0];
+  const dz = aimWorldPoint[2] - fromPoint[2];
+  const dy = aimWorldPoint[1] - fromPoint[1];
+  const horiz = Math.hypot(dx, dz);
+  const desiredYaw = Math.atan2(dx, -dz) + Math.PI; // align with player.yaw convention (-sin/-cos)
+  const desiredPitch = -Math.atan2(dy, horiz);
+  return {
+    yaw: approachAngle(current.yaw, desiredYaw, turnSpeed * dt),
+    pitch: approachAngle(current.pitch, desiredPitch, turnSpeed * dt * 0.6),
+  };
+}
+
+function approachAngle(a, b, maxStep) {
+  let d = (b - a) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  if (Math.abs(d) <= maxStep) return b;
+  return a + Math.sign(d) * maxStep;
+}
