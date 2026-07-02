@@ -28,4 +28,12 @@ describe('FixedTimestep', () => {
     ft.update(1 / 60, (dt) => (received = dt));
     expect(received).toBeCloseTo(1 / 60);
   });
+  it('discards backlog after a large stall so the next frame is not another burst', () => {
+    const ft = new FixedTimestep(1 / 60);
+    let count = 0;
+    ft.update(10, () => count++); // huge stall -> capped at 5, then discard fires
+    expect(count).toBe(5);
+    ft.update(1 / 60, () => count++); // normal frame
+    expect(count).toBe(6); // only +1, NOT +5 — proves the backlog was discarded
+  });
 });
