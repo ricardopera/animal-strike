@@ -10,6 +10,7 @@ export class InputState {
     this.mouseDY = 0;
     this.pointerLocked = false;
     this.firing = false;
+    this.reloadRequested = false;
 
     window.addEventListener('keydown', (e) => {
       this.keys.add(e.code);
