@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 // Pure function: target = {pos:[x,y,z]}, opts = {accuracy, reactionProgress, errorRadius, rand}
 // accuracy: 0..1 (1 = perfect). reactionProgress: 0..1 (how locked-on the bot is).
 export function computeAimPoint(target, opts) {
@@ -11,4 +12,21 @@ export function computeAimPoint(target, opts) {
     y + (rand() - 0.5) * 2 * eff,
     z + (rand() - 0.5) * 2 * eff,
   ];
+}
+
+// Select nearest visible (LOS clear) enemy. Returns {player, dist} or null.
+export function selectTarget(bot, enemies, colliderStore) {
+  const from = bot.position.clone(); from.y += 1.5;
+  let best = null;
+  for (const e of enemies) {
+    const to = e.position.clone(); to.y += 1.5;
+    const dir = new THREE.Vector3().subVectors(to, from);
+    const dist = dir.length();
+    if (dist > 60) continue;
+    dir.normalize();
+    const wall = colliderStore.raycast(from, dir, dist);
+    if (wall && wall.dist < dist - 0.5) continue; // occluded
+    if (!best || dist < best.dist) best = { player: e, dist };
+  }
+  return best;
 }
