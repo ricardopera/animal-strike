@@ -12,6 +12,8 @@ import { BulletTracerPool } from '../fx/BulletTracer.js';
 import { MuzzleFlashPool } from '../fx/MuzzleFlash.js';
 import { HitSparkPool } from '../fx/HitMarker.js';
 import { TargetEntity } from '../player/TargetEntity.js';
+import { Crosshair } from '../ui/Crosshair.js';
+import { Hud } from '../ui/Hud.js';
 
 export class Game {
   constructor(canvas) {
@@ -56,6 +58,12 @@ export class Game {
       new TargetEntity(this.scene, this.colliders, new THREE.Vector3(-8, 3, -10)),
       new TargetEntity(this.scene, this.colliders, new THREE.Vector3(8, 3, -10)),
     ];
+
+    // HUD + crosshair (DOM overlay)
+    const uiRoot = document.getElementById('ui');
+    this.hud = new Hud(uiRoot);
+    this.crosshair = new Crosshair(uiRoot);
+    this.hud.setWeapon(this.weapon.def.name);
 
     // Input
     this.input = new InputState(canvas);
@@ -125,6 +133,12 @@ export class Game {
     this.camera.rotation.x = this.player.pitch;
 
     this.renderer.render(this.scene, this.camera);
+
+    // HUD
+    this.hud.setHealth(this.player.health);
+    this.hud.setAmmo(this.weapon.ammo, this.weapon.def.mag);
+    const speed = Math.hypot(this.player.velocity.x, this.player.velocity.z);
+    this.crosshair.setSpread(14 + speed * 2);
   }
 
   fireOneShot() {
