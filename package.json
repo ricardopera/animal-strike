@@ -1,6 +1,9 @@
 {
   "name": "animal-strike",
   "version": "0.1.0",
+  "description": "AnimalStrike — a Krunker.io-style browser FPS (Three.js + Vite). Single-player free-for-all deathmatch with bot AI.",
+  "author": "ricardopera",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
