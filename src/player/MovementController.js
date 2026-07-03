@@ -12,6 +12,7 @@ export function tickMovement(player, dt, colliderStore) {
 
   const wasOnGround = player.onGround;
   const intent = player.intent;
+  tryStartSlide(player, intent);
   forwardVector(player, _fwd);
   rightVector(player, _right);
 
@@ -40,15 +41,31 @@ export function tickMovement(player, dt, colliderStore) {
     player.velocity.z += _wish.z * addSpeed;
   }
 
-  // Ground friction when no input on ground
-  if (player.onGround && !hasInput) {
-    const drop = M.FRICTION * dt;
-    const speed = Math.hypot(player.velocity.x, player.velocity.z);
-    const newSpeed = Math.max(0, speed - drop);
-    if (speed > 0.0001) {
-      const scale = newSpeed / speed;
-      player.velocity.x *= scale;
-      player.velocity.z *= scale;
+  // Ground friction (or slide physics while sliding)
+  if (player.onGround) {
+    if (player.moveState.sliding) {
+      // low friction during slide; count down; exit when timer expires or speed drops low
+      const friction = M.SLIDE_FRICTION;
+      const speed = Math.hypot(player.velocity.x, player.velocity.z);
+      const newSpeed = Math.max(0, speed - friction * dt);
+      if (speed > 0.0001) {
+        const scale = newSpeed / speed;
+        player.velocity.x *= scale;
+        player.velocity.z *= scale;
+      }
+      player.moveState.slideTimer -= dt;
+      if (player.moveState.slideTimer <= 0 || newSpeed < M.WALK * 0.8) {
+        player.moveState.sliding = false;
+      }
+    } else if (!hasInput) {
+      const drop = M.FRICTION * dt;
+      const speed = Math.hypot(player.velocity.x, player.velocity.z);
+      const newSpeed = Math.max(0, speed - drop);
+      if (speed > 0.0001) {
+        const scale = newSpeed / speed;
+        player.velocity.x *= scale;
+        player.velocity.z *= scale;
+      }
     }
   }
 
@@ -117,6 +134,20 @@ export function applyBhopOnLand(player) {
     }
   }
   player.moveState.bhopBuffer = 0;
+}
+
+export function tryStartSlide(player, intent) {
+  const speed = Math.hypot(player.velocity.x, player.velocity.z);
+  if (intent.crouch && intent.sprint && player.onGround && speed > M.SLIDE_SPEED_THRESHOLD && !player.moveState.sliding) {
+    player.moveState.sliding = true;
+    player.moveState.slideTimer = M.SLIDE_DURATION;
+    // small forward boost
+    const s = speed > 0 ? 1.1 : 1;
+    player.velocity.x *= s;
+    player.velocity.z *= s;
+    return true;
+  }
+  return false;
 }
 
 function moveToward(current, target, maxDelta) {
