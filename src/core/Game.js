@@ -115,6 +115,9 @@ export class Game {
     this.scoreboard.attach();
     this.endScreen = new EndScreen(uiRoot, { onPlayAgain: () => this.returnToMenu() });
     this.hud.setWeapon(this.weapon.def.name);
+    this.hud.setWeaponIcon(this.weapon.def.id);
+    this.killstreak = 0;
+    this.hud.setKillstreak(0);
     this.hud.setTime(this.match.timeLeft);
 
     // Input + main menu
@@ -180,6 +183,10 @@ export class Game {
     this.firstPersonView.setWeapon(weaponId);
     this.firstPersonView.endReload();
     this.hud.setWeapon(this.weapon.def.name);
+    this.hud.setWeaponIcon(this.weapon.def.id);
+    this.killstreak = 0;
+    this.hud.setKillstreak(0);
+    this.hud.setReloadProgress(1);
 
     // Clear old bots, spawn fresh ones.
     for (const bot of this.bots) {
@@ -381,6 +388,7 @@ export class Game {
     this.hud.setHealth(this.player.health);
     this.hud.setAmmo(this.weapon.ammo, this.weapon.def.mag);
     this.hud.setTime(this.match.timeLeft);
+    this.hud.setReloadProgress(this.weapon.reloading ? this.weapon.reloadProgress : 1);
     const speed = Math.hypot(this.player.velocity.x, this.player.velocity.z);
     this.crosshair.setSpread(14 + speed * 2);
     // Sprint FOV kick: widen FOV when sprinting/fast, ease back otherwise
@@ -473,6 +481,8 @@ export class Game {
         this.sparks.spawn(best.point, new THREE.Vector3(0, 1, 0), 0xff3344);
         Sfx.hit();
         this.damageNumbers.spawn(best.point, dmg);
+        // Hitmarker: only when the shooter is the local player (kill=true if this hit kills).
+        if (shooter.isLocal) this.hud.showHitmarker(best.target.health <= 0);
         if (best.target.isLocal) {
           Sfx.hurt();
           this.voice.play('gruntHurt', pitchForAnimal(this.player.animalId, ANIMALS));
@@ -496,6 +506,15 @@ export class Game {
           // Victim death grunt.
           if (best.target.isLocal) this.voice.play('gruntDeath', pitchForAnimal(this.player.animalId, ANIMALS));
           this.respawnTimers.set(best.target.id, MATCH.respawnDelay);
+          // Killstreak: local killer increments, local victim resets.
+          if (shooter.isLocal) {
+            this.killstreak += 1;
+            this.hud.setKillstreak(this.killstreak);
+          }
+          if (best.target.isLocal) {
+            this.killstreak = 0;
+            this.hud.setKillstreak(0);
+          }
           if (shooter.score >= this.match.fragTarget) this.endMatch();
         }
       } else {
