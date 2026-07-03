@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MOVEMENT, MOVEMENT as M } from '../config/Movement.js';
+import { MOVEMENT as M } from '../config/Movement.js';
 import { forwardVector, rightVector } from './Player.js';
 
 const _fwd = new THREE.Vector3();
@@ -97,7 +97,6 @@ export function tickMovement(player, dt, colliderStore) {
 }
 
 export function applyBhopOnLand(player) {
-  const M = MOVEMENT;
   if (player.moveState.bhopBuffer > 0) {
     // chain the bhop: keep speed, re-jump, cap at MAX_BHOP
     const speed = Math.hypot(player.velocity.x, player.velocity.z);
