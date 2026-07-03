@@ -1,8 +1,25 @@
 import * as THREE from 'three';
 import { ANIMALS } from '../config/Animals.js';
 import { MOVEMENT as M } from '../config/Movement.js';
+import { get as getTexture } from '../textures/TextureFactory.js';
 
 function mat(color) { return new THREE.MeshStandardMaterial({ color, flatShading: true }); }
+
+// Fur-textured material tinted by a palette color (cached per color via TextureFactory).
+function furMat(color) {
+  const tex = getTexture('fur', { base: color, accent: shadeHex(color, -0.25), seed: color }).clone();
+  tex.needsUpdate = true;
+  tex.repeat.set(2, 2);
+  return new THREE.MeshStandardMaterial({ map: tex, color: 0xffffff, flatShading: true });
+}
+
+function shadeHex(h, amt) {
+  const r = (h >> 16) & 255, g = (h >> 8) & 255, b = h & 255;
+  const f = amt < 0 ? (1 + amt) : 1, a = amt < 0 ? 0 : amt;
+  return Math.max(0, Math.min(255, Math.round(r * f + 255 * a))) << 16
+       | Math.max(0, Math.min(255, Math.round(g * f + 255 * a))) << 8
+       | Math.max(0, Math.min(255, Math.round(b * f + 255 * a)));
+}
 
 // Builds a humanoid body + attaches an animal head + a gun. Animates limb swing by speed.
 export class CharacterView {
@@ -22,7 +39,7 @@ export class CharacterView {
     this.limbs = [];
     const p = animal.palette;
 
-    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.7, 4, 10), mat(p.primary));
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.7, 6, 12), furMat(p.primary));
     torso.position.y = 1.1;
     this.group.add(torso);
 
