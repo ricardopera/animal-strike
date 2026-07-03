@@ -17,6 +17,7 @@ export class Scoreboard {
     });
   }
   update(players) {
+    if (this.el.style.display === 'none') return; // not visible — skip the rebuild
     const ranked = [...players].sort((a, b) => b.score - a.score);
     this.el.innerHTML = `
       <div style="display:flex;justify-content:space-between;font-weight:700;border-bottom:1px solid #444;padding-bottom:6px;margin-bottom:8px;min-width:320px;">

@@ -26,6 +26,17 @@ import { Sfx, resumeAudio } from '../audio/Audio.js';
 import { SettingsPanel } from '../ui/Settings.js';
 import { DamageNumbers } from '../fx/DamageNumbers.js';
 
+// Module-level scratch vectors reused across hitscan to avoid per-shot GC churn.
+const _shotOrigin = new THREE.Vector3();
+const _shotDir = new THREE.Vector3();
+const _shotMuzzle = new THREE.Vector3();
+const _shotFar = new THREE.Vector3();
+const _rayBox = new THREE.Box3();
+const _rayBoxMin = new THREE.Vector3();
+const _rayBoxMax = new THREE.Vector3();
+const _rayHit = new THREE.Vector3();
+const _ray = new THREE.Ray();
+
 export class Game {
   constructor(canvas) {
     this.canvas = canvas;
@@ -332,35 +343,35 @@ export class Game {
 
   fireOneShot(shooter, weapon) {
     const def = weapon.def;
-    const origin = new THREE.Vector3(shooter.position.x, shooter.position.y + M.EYE_HEIGHT, shooter.position.z);
-    const dir = new THREE.Vector3(
+    _shotOrigin.set(shooter.position.x, shooter.position.y + M.EYE_HEIGHT, shooter.position.z);
+    _shotDir.set(
       -Math.sin(shooter.yaw) * Math.cos(shooter.pitch),
        Math.sin(shooter.pitch),
       -Math.cos(shooter.yaw) * Math.cos(shooter.pitch)
     );
-    dir.x += (Math.random() - 0.5) * def.spread;
-    dir.y += (Math.random() - 0.5) * def.spread;
-    dir.z += (Math.random() - 0.5) * def.spread;
-    dir.normalize();
+    _shotDir.x += (Math.random() - 0.5) * def.spread;
+    _shotDir.y += (Math.random() - 0.5) * def.spread;
+    _shotDir.z += (Math.random() - 0.5) * def.spread;
+    _shotDir.normalize();
 
     const MAX = 500;
     let best = null;
     for (const other of this.entities.players) {
       if (other === shooter || !other.alive) continue;
-      const hit = playerRayHit(other, origin, dir, MAX);
+      const hit = playerRayHit(other, _shotOrigin, _shotDir, MAX);
       if (hit && (!best || hit.dist < best.dist)) best = { dist: hit.dist, point: hit.point, target: other };
     }
-    const wallHit = this.colliders.raycast(origin, dir, MAX);
+    const wallHit = this.colliders.raycast(_shotOrigin, _shotDir, MAX);
     if (wallHit && (!best || wallHit.dist < best.dist)) {
       best = { dist: wallHit.dist, point: wallHit.point, target: null };
     }
 
-    const muzzle = origin.clone().addScaledVector(dir, 0.6);
-    this.flashes.spawn(muzzle);
+    _shotMuzzle.copy(_shotOrigin).addScaledVector(_shotDir, 0.6);
+    this.flashes.spawn(_shotMuzzle);
     if (def.id === 'SNIPER') Sfx.shootSniper(); else Sfx.shootAR();
 
     if (best) {
-      this.tracers.spawn(muzzle, best.point);
+      this.tracers.spawn(_shotMuzzle, best.point);
       if (best.target) {
         const dmg = applyFalloff(def.damage, best.dist, def.falloffStart, def.falloffEnd);
         best.target.health -= dmg;
@@ -385,8 +396,8 @@ export class Game {
         this.sparks.spawn(best.point, new THREE.Vector3(0, 1, 0), 0xffd24a);
       }
     } else {
-      const far = origin.clone().addScaledVector(dir, MAX);
-      this.tracers.spawn(muzzle, far);
+      _shotFar.copy(_shotOrigin).addScaledVector(_shotDir, MAX);
+      this.tracers.spawn(_shotMuzzle, _shotFar);
     }
 
     if (shooter.isLocal) {
@@ -399,11 +410,11 @@ export class Game {
 
 function playerRayHit(player, origin, dir, maxDist) {
   const r = 0.5, h = 1.8;
-  const box = new THREE.Box3(
-    new THREE.Vector3(player.position.x - r, player.position.y, player.position.z - r),
-    new THREE.Vector3(player.position.x + r, player.position.y + h, player.position.z + r)
-  );
-  const hit = new THREE.Ray(origin, dir).intersectBox(box, new THREE.Vector3());
+  _rayBoxMin.set(player.position.x - r, player.position.y, player.position.z - r);
+  _rayBoxMax.set(player.position.x + r, player.position.y + h, player.position.z + r);
+  _rayBox.set(_rayBoxMin, _rayBoxMax);
+  _ray.set(origin, dir);
+  const hit = _ray.intersectBox(_rayBox, _rayHit);
   if (!hit) return null;
   const dist = origin.distanceTo(hit);
   if (dist > maxDist) return null;
