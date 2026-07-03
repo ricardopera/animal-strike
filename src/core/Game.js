@@ -17,6 +17,7 @@ import { MainMenu } from '../ui/MainMenu.js';
 import { Scoreboard } from '../ui/Scoreboard.js';
 import { EndScreen } from '../ui/EndScreen.js';
 import { CharacterView } from '../player/CharacterView.js';
+import { FirstPersonView } from '../player/FirstPersonView.js';
 import { EntityStore } from './EntityStore.js';
 import { AIController } from '../ai/AIController.js';
 import { MATCH } from '../config/Match.js';
@@ -80,7 +81,13 @@ export class Game {
     this.player.view.setVisible(false);
     this.weapon = new WeaponController(WEAPONS.AR);
     this.weapon.fireCallback = () => this.pendingShots.push({});
+    this.weapon.onReloadStart = () => this.firstPersonView.startReload(this.weapon.def.reloadTime);
     this.entities.add(this.player);
+
+    // First-person weapon viewmodel (synced to camera each frame, hidden until match)
+    this.firstPersonView = new FirstPersonView();
+    this.firstPersonView.attach(this.scene);
+    this.firstPersonView.setWeapon('AR');
 
     // Match state (inactive until startMatch)
     this.match = { active: false, timeLeft: MATCH.matchSeconds, fragTarget: MATCH.fragTarget, over: false };
@@ -145,6 +152,9 @@ export class Game {
 
     this.weapon = new WeaponController(WEAPONS[weaponId]);
     this.weapon.fireCallback = () => this.pendingShots.push({});
+    this.weapon.onReloadStart = () => this.firstPersonView.startReload(this.weapon.def.reloadTime);
+    this.firstPersonView.setWeapon(weaponId);
+    this.firstPersonView.endReload();
     this.hud.setWeapon(this.weapon.def.name);
 
     // Clear old bots, spawn fresh ones.
@@ -319,6 +329,14 @@ export class Game {
     this.camera.rotation.order = 'YXZ';
     this.camera.rotation.y = this.player.yaw;
     this.camera.rotation.x = this.player.pitch;
+    this.camera.updateMatrixWorld();
+    // First-person viewmodel: visible only while playing + alive
+    const showFP = this.match.active && this.player.alive;
+    this.firstPersonView.setVisible(showFP);
+    if (showFP) {
+      this.firstPersonView.syncToCamera(this.camera);
+      this.firstPersonView.update(realDt, Math.hypot(this.player.velocity.x, this.player.velocity.z));
+    }
     this.renderer.render(this.scene, this.camera);
 
     // HUD + scoreboard
@@ -343,12 +361,22 @@ export class Game {
 
   fireOneShot(shooter, weapon) {
     const def = weapon.def;
-    _shotOrigin.set(shooter.position.x, shooter.position.y + M.EYE_HEIGHT, shooter.position.z);
-    _shotDir.set(
-      -Math.sin(shooter.yaw) * Math.cos(shooter.pitch),
-       Math.sin(shooter.pitch),
-      -Math.cos(shooter.yaw) * Math.cos(shooter.pitch)
-    );
+    // Origin/direction: for the local player, use the actual gun-muzzle world
+    // position + aim (so tracers/flashes come from the visible weapon). For
+    // bots, fall back to the eye-derived origin (they have no FP view).
+    if (shooter.isLocal && this.firstPersonView.group.visible) {
+      const m = this.firstPersonView.getMuzzleWorldPosition(_shotOrigin, _shotDir);
+      _shotOrigin.copy(m.pos);
+      _shotDir.copy(m.dir);
+      this.firstPersonView.triggerKick(def.recoil ? 1 : 1);
+    } else {
+      _shotOrigin.set(shooter.position.x, shooter.position.y + M.EYE_HEIGHT, shooter.position.z);
+      _shotDir.set(
+        -Math.sin(shooter.yaw) * Math.cos(shooter.pitch),
+         Math.sin(shooter.pitch),
+        -Math.cos(shooter.yaw) * Math.cos(shooter.pitch)
+      );
+    }
     _shotDir.x += (Math.random() - 0.5) * def.spread;
     _shotDir.y += (Math.random() - 0.5) * def.spread;
     _shotDir.z += (Math.random() - 0.5) * def.spread;

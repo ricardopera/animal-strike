@@ -7,10 +7,17 @@ export class WeaponController {
     this.reloading = false;
     this.triggerHeldPrev = false; // for semi-auto
     this.fireCallback = null;     // set by owner: (shot) => {...}
+    this.onReloadStart = null;    // set by owner: () => {...} fired when a reload begins
   }
 
   get interval() {
     return 60 / this.def.rpm;
+  }
+
+  // reload progress 0..1 (1 when not reloading or just finished)
+  get reloadProgress() {
+    if (!this.reloading || this.def.reloadTime <= 0) return 1;
+    return 1 - Math.max(0, this.reloadEndTime) / this.def.reloadTime;
   }
 
   // update(dt, firing, reloadRequested) -> calls fireCallback({}) per shot
@@ -19,6 +26,7 @@ export class WeaponController {
     if (reloadRequested && !this.reloading && this.ammo < this.def.mag) {
       this.reloading = true;
       this.reloadEndTime = this.def.reloadTime;
+      if (this.onReloadStart) this.onReloadStart();
     }
     if (this.reloading) {
       this.reloadEndTime -= dt;
@@ -43,6 +51,7 @@ export class WeaponController {
     if (!this.reloading && this.ammo < this.def.mag) {
       this.reloading = true;
       this.reloadEndTime = this.def.reloadTime;
+      if (this.onReloadStart) this.onReloadStart();
     }
   }
 }
