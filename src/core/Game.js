@@ -31,6 +31,8 @@ import { DamageNumbers } from '../fx/DamageNumbers.js';
 const _shotOrigin = new THREE.Vector3();
 const _shotDir = new THREE.Vector3();
 const _shotMuzzle = new THREE.Vector3();
+const _pelletDir = new THREE.Vector3();
+const _shotMuzzle2 = new THREE.Vector3();
 const _shotFar = new THREE.Vector3();
 const _rayBox = new THREE.Box3();
 const _rayBoxMin = new THREE.Vector3();
@@ -361,45 +363,74 @@ export class Game {
 
   fireOneShot(shooter, weapon) {
     const def = weapon.def;
-    // Origin/direction: for the local player, use the actual gun-muzzle world
-    // position + aim (so tracers/flashes come from the visible weapon). For
-    // bots, fall back to the eye-derived origin (they have no FP view).
+    // Origin/aim: local player uses the real gun-muzzle world position; bots use eye-derived.
+    let origin, baseDir;
     if (shooter.isLocal && this.firstPersonView.group.visible) {
       const m = this.firstPersonView.getMuzzleWorldPosition(_shotOrigin, _shotDir);
-      _shotOrigin.copy(m.pos);
-      _shotDir.copy(m.dir);
-      this.firstPersonView.triggerKick(def.recoil ? 1 : 1);
+      origin = _shotOrigin.copy(m.pos);
+      baseDir = _shotDir.copy(m.dir);
+      this.firstPersonView.triggerKick(1);
     } else {
-      _shotOrigin.set(shooter.position.x, shooter.position.y + M.EYE_HEIGHT, shooter.position.z);
-      _shotDir.set(
+      origin = _shotOrigin.set(shooter.position.x, shooter.position.y + M.EYE_HEIGHT, shooter.position.z);
+      baseDir = _shotDir.set(
         -Math.sin(shooter.yaw) * Math.cos(shooter.pitch),
          Math.sin(shooter.pitch),
         -Math.cos(shooter.yaw) * Math.cos(shooter.pitch)
       );
     }
-    _shotDir.x += (Math.random() - 0.5) * def.spread;
-    _shotDir.y += (Math.random() - 0.5) * def.spread;
-    _shotDir.z += (Math.random() - 0.5) * def.spread;
-    _shotDir.normalize();
 
+    // Per-shot FX (once): muzzle flash + weapon sound, at the muzzle.
+    _shotMuzzle.copy(origin).addScaledVector(baseDir, 0.6);
+    this.flashes.spawn(_shotMuzzle);
+    this.playShootSfx(def.id);
+
+    // Fire N pellets (shotgun) or 1 (everything else). Each pellet gets its own spread + ray.
+    const pellets = def.pellets || 1;
+    for (let p = 0; p < pellets; p++) {
+      // scratch per-pellet direction (don't clobber baseDir for the next pellet)
+      _pelletDir.copy(baseDir);
+      _pelletDir.x += (Math.random() - 0.5) * def.spread;
+      _pelletDir.y += (Math.random() - 0.5) * def.spread;
+      _pelletDir.z += (Math.random() - 0.5) * def.spread;
+      _pelletDir.normalize();
+      this.fireOnePellet(shooter, def, origin, _pelletDir);
+    }
+
+    // Recoil (local player only)
+    if (shooter.isLocal) {
+      shooter.pitch += def.recoil.vertical * (Math.random() * 0.5 + 0.5);
+      shooter.yaw += (Math.random() - 0.5) * def.recoil.horizontal;
+      shooter.pitch = Math.min(shooter.pitch, Math.PI / 2 - 0.01);
+    }
+  }
+
+  playShootSfx(weaponId) {
+    switch (weaponId) {
+      case 'SNIPER': Sfx.shootSniper(); break;
+      case 'SHOTGUN': Sfx.shootShotgun(); break;
+      case 'PISTOL': Sfx.shootPistol(); break;
+      case 'SMG': Sfx.shootSMG(); break;
+      default: Sfx.shootAR();
+    }
+  }
+
+  // Resolve a single pellet ray: nearest of {players, walls}, apply damage/FX.
+  fireOnePellet(shooter, def, origin, dir) {
     const MAX = 500;
     let best = null;
     for (const other of this.entities.players) {
       if (other === shooter || !other.alive) continue;
-      const hit = playerRayHit(other, _shotOrigin, _shotDir, MAX);
+      const hit = playerRayHit(other, origin, dir, MAX);
       if (hit && (!best || hit.dist < best.dist)) best = { dist: hit.dist, point: hit.point, target: other };
     }
-    const wallHit = this.colliders.raycast(_shotOrigin, _shotDir, MAX);
+    const wallHit = this.colliders.raycast(origin, dir, MAX);
     if (wallHit && (!best || wallHit.dist < best.dist)) {
       best = { dist: wallHit.dist, point: wallHit.point, target: null };
     }
-
-    _shotMuzzle.copy(_shotOrigin).addScaledVector(_shotDir, 0.6);
-    this.flashes.spawn(_shotMuzzle);
-    if (def.id === 'SNIPER') Sfx.shootSniper(); else Sfx.shootAR();
+    _shotMuzzle2.copy(origin).addScaledVector(dir, 0.6);
 
     if (best) {
-      this.tracers.spawn(_shotMuzzle, best.point);
+      this.tracers.spawn(_shotMuzzle2, best.point);
       if (best.target) {
         const dmg = applyFalloff(def.damage, best.dist, def.falloffStart, def.falloffEnd);
         best.target.health -= dmg;
@@ -424,14 +455,8 @@ export class Game {
         this.sparks.spawn(best.point, new THREE.Vector3(0, 1, 0), 0xffd24a);
       }
     } else {
-      _shotFar.copy(_shotOrigin).addScaledVector(_shotDir, MAX);
-      this.tracers.spawn(_shotMuzzle, _shotFar);
-    }
-
-    if (shooter.isLocal) {
-      shooter.pitch += def.recoil.vertical * (Math.random() * 0.5 + 0.5);
-      shooter.yaw += (Math.random() - 0.5) * def.recoil.horizontal;
-      shooter.pitch = Math.min(shooter.pitch, Math.PI / 2 - 0.01);
+      _shotFar.copy(origin).addScaledVector(dir, MAX);
+      this.tracers.spawn(_shotMuzzle2, _shotFar);
     }
   }
 }

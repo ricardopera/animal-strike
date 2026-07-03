@@ -51,9 +51,16 @@ export class CharacterView {
     this.group.add(this.gun);
   }
   setWeapon(weaponId) {
-    // Swap gun proportions by id (visual only).
+    // Swap gun proportions by id (visual only, third-person on bots).
     if (this.gun) this.group.remove(this.gun);
-    const size = weaponId === 'SNIPER' ? { w: 0.1, h: 0.1, d: 0.95 } : { w: 0.12, h: 0.14, d: 0.6 };
+    const SIZES = {
+      AR:      { w: 0.12, h: 0.14, d: 0.60 },
+      SNIPER:  { w: 0.10, h: 0.10, d: 0.95 },
+      SMG:     { w: 0.10, h: 0.12, d: 0.42 },
+      SHOTGUN: { w: 0.13, h: 0.15, d: 0.62 },
+      PISTOL:  { w: 0.08, h: 0.10, d: 0.26 },
+    };
+    const size = SIZES[weaponId] || SIZES.AR;
     this.gun = new THREE.Mesh(new THREE.BoxGeometry(size.w, size.h, size.d), mat(0x222428));
     this.gun.position.set(0.4, 1.15, 0.3);
     this.group.add(this.gun);
