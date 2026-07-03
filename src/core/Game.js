@@ -23,6 +23,7 @@ import { MATCH } from '../config/Match.js';
 import { getRandomSpawn } from '../world/SpawnPoints.js';
 import { ANIMAL_IDS } from '../config/Animals.js';
 import { Sfx, resumeAudio } from '../audio/Audio.js';
+import { DamageNumbers } from '../fx/DamageNumbers.js';
 
 export class Game {
   constructor(canvas) {
@@ -77,6 +78,9 @@ export class Game {
     const uiRoot = document.getElementById('ui');
     this.hud = new Hud(uiRoot);
     this.crosshair = new Crosshair(uiRoot);
+    this.damageNumbers = new DamageNumbers(uiRoot, this.camera);
+    this.vignetteEl = document.getElementById('vignette');
+    this.baseFov = this.camera.fov;
     this.scoreboard = new Scoreboard(uiRoot);
     this.scoreboard.attach();
     this.endScreen = new EndScreen(uiRoot, { onPlayAgain: () => this.returnToMenu() });
@@ -270,6 +274,7 @@ export class Game {
     this.tracers.update(realDt);
     this.flashes.update(realDt);
     this.sparks.update(realDt);
+    this.damageNumbers.update(realDt);
 
     // Bot views
     for (const bot of this.bots) {
@@ -295,6 +300,17 @@ export class Game {
     this.hud.setTime(this.match.timeLeft);
     const speed = Math.hypot(this.player.velocity.x, this.player.velocity.z);
     this.crosshair.setSpread(14 + speed * 2);
+    // Sprint FOV kick: widen FOV when sprinting/fast, ease back otherwise
+    const targetFov = this.baseFov + (this.player.intent.sprint && this.player.velocity.lengthSq() > 4 ? 8 : 0);
+    if (Math.abs(this.camera.fov - targetFov) > 0.05) {
+      this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, realDt * 10);
+      this.camera.updateProjectionMatrix();
+    }
+    // Low-HP vignette: intensify red inset when health is low
+    if (this.vignetteEl) {
+      const intensity = this.player.alive && this.player.health < 30 ? (30 - this.player.health) / 30 : 0;
+      this.vignetteEl.style.boxShadow = `inset 0 0 200px 60px rgba(180,0,0,${(intensity * 0.6).toFixed(3)})`;
+    }
     this.scoreboard.update(this.entities.players);
   }
 
@@ -334,6 +350,7 @@ export class Game {
         best.target.health -= dmg;
         this.sparks.spawn(best.point, new THREE.Vector3(0, 1, 0), 0xff3344);
         Sfx.hit();
+        this.damageNumbers.spawn(best.point, dmg);
         if (best.target.isLocal) Sfx.hurt();
         if (best.target.health <= 0) {
           best.target.health = 0;

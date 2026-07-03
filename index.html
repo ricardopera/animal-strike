@@ -12,7 +12,9 @@
 </head>
 <body>
   <canvas id="game"></canvas>
-  <div id="ui"></div>
+  <div id="ui">
+    <div id="vignette" style="position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 200px 60px rgba(180,0,0,0);transition:box-shadow .25s;"></div>
+  </div>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
