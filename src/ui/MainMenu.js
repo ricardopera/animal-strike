@@ -2,9 +2,10 @@ import { ANIMALS, ANIMAL_IDS } from '../config/Animals.js';
 import { WEAPONS } from '../config/Weapons.js';
 
 export class MainMenu {
-  constructor(root, { onStart } = {}) {
+  constructor(root, { onStart, onToggleSettings } = {}) {
     this.root = root;
     this.onStart = onStart;
+    this.onToggleSettings = onToggleSettings;
     this.selectedAnimal = 'FOX';
     this.selectedWeapon = 'AR';
     this.el = document.createElement('div');
@@ -38,7 +39,9 @@ export class MainMenu {
           </button>`).join('')}
       </div>
       <button id="play-btn" style="background:#4dffb8;color:#102020;border:none;padding:14px 48px;
-        border-radius:10px;font-size:18px;font-weight:700;cursor:pointer;">PLAY</button>`;
+        border-radius:10px;font-size:18px;font-weight:700;cursor:pointer;">PLAY</button>
+      <button id="settings-btn" style="margin-top:12px;background:#444;color:#fff;border:none;padding:8px 24px;
+        border-radius:8px;cursor:pointer;">SETTINGS</button>`;
     this.el.querySelectorAll('[data-animal]').forEach(b => {
       b.onclick = () => { this.selectedAnimal = b.dataset.animal; this.render(); };
     });
@@ -49,6 +52,8 @@ export class MainMenu {
       this.el.style.display = 'none';
       if (this.onStart) this.onStart({ animal: this.selectedAnimal, weapon: this.selectedWeapon });
     };
+    const settingsBtn = this.el.querySelector('#settings-btn');
+    if (settingsBtn) settingsBtn.onclick = () => { if (this.onToggleSettings) this.onToggleSettings(); };
   }
   show() { this.el.style.display = 'flex'; }
   hide() { this.el.style.display = 'none'; }

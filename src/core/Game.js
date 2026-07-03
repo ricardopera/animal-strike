@@ -23,6 +23,7 @@ import { MATCH } from '../config/Match.js';
 import { getRandomSpawn } from '../world/SpawnPoints.js';
 import { ANIMAL_IDS } from '../config/Animals.js';
 import { Sfx, resumeAudio } from '../audio/Audio.js';
+import { SettingsPanel } from '../ui/Settings.js';
 import { DamageNumbers } from '../fx/DamageNumbers.js';
 
 export class Game {
@@ -89,9 +90,12 @@ export class Game {
 
     // Input + main menu
     this.input = new InputState(canvas);
+    this.settings = new SettingsPanel(uiRoot, { onChange: (s) => this.applySettings(s) });
     this.menu = new MainMenu(uiRoot, {
       onStart: ({ animal, weapon }) => this.startMatch(animal, weapon),
+      onToggleSettings: () => this.settings.toggle(),
     });
+    this.applySettings(this.settings.settings);
 
     // Loop
     this.fixed = new FixedTimestep(1 / 60);
@@ -167,6 +171,18 @@ export class Game {
     this.endScreen.hide();
     resumeAudio();
     this.input.requestPointerLock();
+  }
+
+  applySettings(s) {
+    this.input.sensitivity = s.sensitivity;
+    this.input.invertY = s.invertY;
+    this.baseFov = s.fov;
+    // camera.fov is eased toward baseFov each frame in frame(), so just set baseFov here
+    if (s.quality === 'low') {
+      this.renderer.setPixelRatio(1);
+    } else {
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    }
   }
 
   returnToMenu() {
