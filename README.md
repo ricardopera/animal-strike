@@ -4,7 +4,7 @@ A fast, skill-based **browser FPS** in the spirit of [Krunker.io](https://krunke
 
 Pick an animal-headed gunner, pick a weapon, and frag your way to 25 kills before the bots do.
 
-![AnimalStrike](https://img.shields.io/badge/three.js-r0.185-black) ![tests](https://img.shields.io/badge/tests-42%20passing-brightgreen) ![status](https://img.shields.io/badge/status-playable-success)
+![AnimalStrike](https://img.shields.io/badge/three.js-r0.185-black) ![tests](https://img.shields.io/badge/tests-48%20passing-brightgreen) ![status](https://img.shields.io/badge/status-playable-success)
 
 ---
 
@@ -14,11 +14,18 @@ Pick an animal-headed gunner, pick a weapon, and frag your way to 25 kills befor
   - 🐰 **Bunny-hop** — chain jumps to build speed; air-strafe to exceed sprint
   - 🛷 **Slide** — crouch while sprinting for a low-friction boost
   - 🧗 **Wall-run** — leap at a wall, run along it, jump off
-- **Hitscan combat** — Assault Rifle (full-auto) and Sniper (semi-auto), with damage falloff, recoil, bullet tracers, muzzle flash, and hit sparks
-- **7 animal skins** — Fox, Wolf, Panda, Tiger, Bear, Bunny, Owl — each with speed/HP multipliers and a procedurally-built low-poly head
+- **Hitscan combat — 5 weapons**, each with damage falloff, recoil, bullet tracers, muzzle flash, and hit sparks:
+  - 🔫 **Assault Rifle** — full-auto, balanced all-rounder
+  - 🎯 **Sniper** — semi-auto, high damage, long range
+  - 🔫 **SMG** — fast-fire, low recoil, short range
+  - 🔫 **Shotgun** — multi-pellet spread, devastating up close
+  - 🔫 **Pistol** — reliable sidearm
+  - Plus a **first-person viewmodel** with per-weapon models, idle sway, recoil kick, and reload animation
+- **7 animal skins** — Fox, Wolf, Panda, Tiger, Bear, Bunny, Owl — each with speed/HP multipliers and a procedurally-built low-poly head, now with **procedural fur textures**
 - **5 AI bots** — finite-state-machine brains (patrol → chase → engage → retreat), waypoint navigation, line-of-sight target selection, accuracy/reaction-time aim model
 - **Full deathmatch loop** — 5-minute timer, 25-frag target, 2.5s respawns at the spawn farthest from enemies, killfeed, Tab scoreboard, VICTORY/DEFEATED end screen, play-again
-- **Polish** — synthesized WebAudio SFX (no asset files), dynamic crosshair, HP/ammo HUD, sprint FOV kick, low-HP red vignette, and a settings panel (sensitivity / FOV / invert-Y / quality) persisted to `localStorage`
+- **Polish** — synthesized WebAudio SFX **+ real generated music & voice** (MiniMax; synth fallback), dynamic crosshair, HP/ammo HUD with **bars, weapon icons, reload ring, hitmarker, killstreak counter**, sprint FOV kick, low-HP red vignette, and a settings panel (sensitivity / FOV / invert-Y / quality / music / voice) persisted to `localStorage`
+- **Richer arena** — ~50 buildings with twin towers, a central structure, cover clusters, sniper perches, and **procedural textures** (concrete / metal / wood) applied throughout
 
 ---
 
@@ -59,8 +66,9 @@ src/
 ├── ai/          # Bot brain: FSM controller, navigation, aim model, combat
 ├── fx/          # Pooled effects: tracers, muzzle flash, sparks, damage numbers
 ├── ui/          # DOM overlay: HUD, crosshair, scoreboard, menus, settings
-├── audio/       # Synthesized WebAudio one-shots
-└── tests/       # Vitest unit tests (42)
+├── audio/       # Synthesized WebAudio one-shots + music/voice players
+├── textures/    # Procedural TextureFactory (concrete/metal/wood, fur)
+└── tests/       # Vitest unit tests (48)
 ```
 
 The simulation runs on a **fixed 60 Hz timestep** decoupled from rendering via an accumulator, so movement and AI are deterministic regardless of frame rate. Bots reuse the *same* player/movement/weapon code as the human — the `AIController` just writes to the bot's intent instead of reading a mouse/keyboard.
@@ -74,7 +82,7 @@ npm test          # run once
 npm run test:watch
 ```
 
-42 unit tests cover the pure/tricky logic: math helpers, the fixed-timestep accumulator (including its spiral-of-death guard), weapon fire-rate/ammo/reload, the bot aim model, damage falloff, spawn-point selection, and all three parkour mechanics (bhop, slide, wall-run).
+48 unit tests cover the pure/tricky logic: math helpers, the fixed-timestep accumulator (including its spiral-of-death guard), weapon fire-rate/ammo/reload (all 5 weapons), the bot aim model, damage falloff, spawn-point selection, and all three parkour mechanics (bhop, slide, wall-run).
 
 ---
 
@@ -97,6 +105,7 @@ The architecture deliberately leaves hooks open for later expansion:
 - **Server-authoritative netcode** — the entity/AI split is structured so a network layer can drop in
 
 Design spec: `docs/superpowers/specs/2026-07-02-animal-strike-design.md`
+v2 expansion spec: `docs/superpowers/specs/2026-07-03-animal-strike-v2-design.md`
 Implementation plan: `docs/superpowers/plans/2026-07-02-animal-strike.md`
 
 ---

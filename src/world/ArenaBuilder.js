@@ -145,9 +145,6 @@ export class ArenaBuilder {
     placePair(3, 0.8, 5, COLORS.pad, 6, 0.4, 12, 'metal');
 
     // TOTAL: 1 + 4 + 16 + 9 + 12 + 8 + 4 + 4 = 58 solid meshes (incl. ground).
-    // eslint-disable-next-line no-console
-    console.log(`[ArenaBuilder] placed ${count} solid meshes (incl. ground)`);
-
     scene.add(group);
     return group;
   }
