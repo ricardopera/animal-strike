@@ -22,6 +22,7 @@ import { AIController } from '../ai/AIController.js';
 import { MATCH } from '../config/Match.js';
 import { getRandomSpawn } from '../world/SpawnPoints.js';
 import { ANIMAL_IDS } from '../config/Animals.js';
+import { Sfx, resumeAudio } from '../audio/Audio.js';
 
 export class Game {
   constructor(canvas) {
@@ -160,6 +161,7 @@ export class Game {
     this.player.score = 0;
     this.player.deaths = 0;
     this.endScreen.hide();
+    resumeAudio();
     this.input.requestPointerLock();
   }
 
@@ -323,6 +325,7 @@ export class Game {
 
     const muzzle = origin.clone().addScaledVector(dir, 0.6);
     this.flashes.spawn(muzzle);
+    if (def.id === 'SNIPER') Sfx.shootSniper(); else Sfx.shootAR();
 
     if (best) {
       this.tracers.spawn(muzzle, best.point);
@@ -330,6 +333,8 @@ export class Game {
         const dmg = applyFalloff(def.damage, best.dist, def.falloffStart, def.falloffEnd);
         best.target.health -= dmg;
         this.sparks.spawn(best.point, new THREE.Vector3(0, 1, 0), 0xff3344);
+        Sfx.hit();
+        if (best.target.isLocal) Sfx.hurt();
         if (best.target.health <= 0) {
           best.target.health = 0;
           best.target.alive = false;
@@ -339,6 +344,7 @@ export class Game {
           const victimName = best.target.isLocal ? 'You' : best.target.id;
           const shooterName = shooter.isLocal ? 'You' : shooter.id;
           this.hud.addKill(`${shooterName} fragged ${victimName}`);
+          Sfx.kill();
           this.respawnTimers.set(best.target.id, MATCH.respawnDelay);
           if (shooter.score >= this.match.fragTarget) this.endMatch();
         }
