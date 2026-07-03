@@ -5,6 +5,28 @@ import { forwardVector, rightVector } from './Player.js';
 const _fwd = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _wish = new THREE.Vector3();
+const _wallProbeDir = new THREE.Vector3();
+
+export function tryStartWallrun(player, colliderStore, intent) {
+  if (player.onGround) return false;
+  if (player.moveState.wallrunsThisJump >= 1) return false;
+  // only attempt if there's directional input
+  if (!(intent.forward !== 0 || intent.strafe !== 0)) return false;
+  // probe in the player's body-space movement direction (forward/strafe from yaw)
+  const sinY = Math.sin(player.yaw), cosY = Math.cos(player.yaw);
+  _wallProbeDir.set(
+    -sinY * intent.forward + cosY * intent.strafe,
+    0,
+    -cosY * intent.forward - sinY * intent.strafe
+  ).normalize();
+  const origin = new THREE.Vector3(player.position.x, player.position.y + 0.9, player.position.z);
+  const hit = colliderStore.raycast(origin, _wallProbeDir, 0.8);
+  if (!hit) return false;
+  player.moveState.wallrunning = true;
+  player.moveState.wallrunTimer = M.WALLRUN_DURATION;
+  player.moveState.wallrunsThisJump = (player.moveState.wallrunsThisJump || 0) + 1;
+  return true;
+}
 
 // Integrates one fixed tick for a player against the collider store.
 export function tickMovement(player, dt, colliderStore) {
@@ -85,8 +107,30 @@ export function tickMovement(player, dt, colliderStore) {
     if (player.moveState.bhopBuffer < 0) player.moveState.bhopBuffer = 0;
   }
 
-  // Gravity
-  player.velocity.y -= M.GRAVITY * dt;
+  // Wall-run attach (before gravity, so we can override it)
+  if (!player.moveState.wallrunning) {
+    tryStartWallrun(player, colliderStore, intent);
+  }
+
+  // Gravity (reduced while wall-running)
+  if (player.moveState.wallrunning) {
+    player.moveState.wallrunTimer -= dt;
+    if (player.moveState.wallrunTimer <= 0) {
+      player.moveState.wallrunning = false;
+    } else if (intent.jump) {
+      // jump off the wall: forward + up boost
+      player.velocity.y = M.WALLRUN_JUMP_UP;
+      // small forward boost along current facing
+      const sinY = Math.sin(player.yaw), cosY = Math.cos(player.yaw);
+      player.velocity.x += -sinY * M.WALLRUN_JUMP_FORWARD;
+      player.velocity.z += -cosY * M.WALLRUN_JUMP_FORWARD;
+      player.moveState.wallrunning = false;
+    } else {
+      player.velocity.y -= M.WALLRUN_GRAVITY * dt; // much reduced gravity while wall-running
+    }
+  } else {
+    player.velocity.y -= M.GRAVITY * dt;
+  }
 
   // Integrate position
   player.position.x += player.velocity.x * dt;
@@ -110,6 +154,8 @@ export function tickMovement(player, dt, colliderStore) {
 
   if (player.onGround && !wasOnGround) {
     applyBhopOnLand(player);
+    player.moveState.wallrunning = false;
+    player.moveState.wallrunsThisJump = 0;
   }
 }
 
