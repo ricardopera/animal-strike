@@ -167,7 +167,7 @@ export class Game {
         if (!bot.alive) continue;
         bot.brain.update(dt, this.entities.enemiesOf(bot), this.colliders);
         tickMovement(bot, dt, this.colliders);
-        bot.weapon.update(dt, bot.intent.firing, false);
+        bot.weapon.update(dt, bot.intent.firing, bot.intent.reloadRequested);
       }
     });
 

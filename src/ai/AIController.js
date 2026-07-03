@@ -102,7 +102,7 @@ export class AIController {
       sprint: this.state === STATES.CHASE,
       crouch: false,
       firing,
-      reloadRequested: false,
+      reloadRequested: bot.weapon && bot.weapon.ammo === 0,
     };
   }
 }
