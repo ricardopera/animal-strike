@@ -22,8 +22,10 @@ import { EntityStore } from './EntityStore.js';
 import { AIController } from '../ai/AIController.js';
 import { MATCH } from '../config/Match.js';
 import { getRandomSpawn } from '../world/SpawnPoints.js';
-import { ANIMAL_IDS } from '../config/Animals.js';
+import { ANIMAL_IDS, ANIMALS } from '../config/Animals.js';
 import { Sfx, resumeAudio } from '../audio/Audio.js';
+import { MusicPlayer } from '../audio/MusicPlayer.js';
+import { VoicePlayer, pitchForAnimal } from '../audio/VoicePlayer.js';
 import { SettingsPanel } from '../ui/Settings.js';
 import { DamageNumbers } from '../fx/DamageNumbers.js';
 
@@ -101,6 +103,13 @@ export class Game {
     this.crosshair = new Crosshair(uiRoot);
     this.damageNumbers = new DamageNumbers(uiRoot, this.camera);
     this.vignetteEl = document.getElementById('vignette');
+    // Music + voice players (load generated files, fall back to synth if missing)
+    this.music = new MusicPlayer();
+    this.voice = new VoicePlayer();
+    this.music.preload();
+    this.voice.preload();
+    this._lastFragMilestone = 0;
+    this._lowTimeAnnounced = false;
     this.baseFov = this.camera.fov;
     this.scoreboard = new Scoreboard(uiRoot);
     this.scoreboard.attach();
@@ -116,6 +125,19 @@ export class Game {
       onToggleSettings: () => this.settings.toggle(),
     });
     this.applySettings(this.settings.settings);
+
+    // Unlock audio + start menu music on the first user gesture (autoplay policy).
+    this._audioUnlocked = false;
+    const unlock = () => {
+      if (this._audioUnlocked) return;
+      this._audioUnlocked = true;
+      resumeAudio();
+      this.music.play('menu');
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
 
     // Loop
     this.fixed = new FixedTimestep(1 / 60);
@@ -193,6 +215,10 @@ export class Game {
     this.player.deaths = 0;
     this.endScreen.hide();
     resumeAudio();
+    this.music.play('combat');
+    this.voice.play('matchStart');
+    this._lastFragMilestone = 0;
+    this._lowTimeAnnounced = false;
     this.input.requestPointerLock();
   }
 
@@ -200,6 +226,8 @@ export class Game {
     this.input.sensitivity = s.sensitivity;
     this.input.invertY = s.invertY;
     this.baseFov = s.fov;
+    this.music.setMuted(!s.musicOn);
+    this.voice.setMuted(!s.voiceOn);
     // camera.fov is eased toward baseFov each frame in frame(), so just set baseFov here
     if (s.quality === 'low') {
       this.renderer.setPixelRatio(1);
@@ -212,6 +240,7 @@ export class Game {
     this.match.active = false;
     this.match.over = true;
     if (document.pointerLockElement) document.exitPointerLock();
+    this.music.play('menu');
     for (const bot of this.bots) {
       if (bot.view) bot.view.dispose();
       this.entities.remove(bot);
@@ -226,6 +255,9 @@ export class Game {
     this.match.active = false;
     if (document.pointerLockElement) document.exitPointerLock();
     const ranked = [...this.entities.players].sort((a, b) => b.score - a.score);
+    const youWon = ranked[0] && ranked[0].isLocal;
+    this.voice.play(youWon ? 'victory' : 'defeat');
+    this.music.play('menu');
     this.endScreen.show(ranked);
   }
 
@@ -266,6 +298,10 @@ export class Game {
       if (this.match.active) {
         // Match timer
         this.match.timeLeft -= dt;
+        if (this.match.timeLeft <= 30 && !this._lowTimeAnnounced) {
+          this._lowTimeAnnounced = true;
+          this.voice.play('lowTime');
+        }
         if (this.match.timeLeft <= 0) {
           this.match.timeLeft = 0;
           this.endMatch();
@@ -437,7 +473,10 @@ export class Game {
         this.sparks.spawn(best.point, new THREE.Vector3(0, 1, 0), 0xff3344);
         Sfx.hit();
         this.damageNumbers.spawn(best.point, dmg);
-        if (best.target.isLocal) Sfx.hurt();
+        if (best.target.isLocal) {
+          Sfx.hurt();
+          this.voice.play('gruntHurt', pitchForAnimal(this.player.animalId, ANIMALS));
+        }
         if (best.target.health <= 0) {
           best.target.health = 0;
           best.target.alive = false;
@@ -448,6 +487,14 @@ export class Game {
           const shooterName = shooter.isLocal ? 'You' : shooter.id;
           this.hud.addKill(`${shooterName} fragged ${victimName}`);
           Sfx.kill();
+          // Voice: killer gets a kill grunt (pitched by their animal); milestone every 5 kills.
+          if (shooter.isLocal) this.voice.play('gruntKill', pitchForAnimal(this.player.animalId, ANIMALS));
+          if (shooter.score > 0 && shooter.score % 5 === 0 && shooter.score !== this._lastFragMilestone) {
+            this._lastFragMilestone = shooter.score;
+            this.voice.play('fragMilestone');
+          }
+          // Victim death grunt.
+          if (best.target.isLocal) this.voice.play('gruntDeath', pitchForAnimal(this.player.animalId, ANIMALS));
           this.respawnTimers.set(best.target.id, MATCH.respawnDelay);
           if (shooter.score >= this.match.fragTarget) this.endMatch();
         }

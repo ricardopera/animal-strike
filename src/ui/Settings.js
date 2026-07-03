@@ -1,5 +1,5 @@
 const KEY = 'animalstrike_settings';
-const DEFAULTS = { sensitivity: 0.0022, fov: 80, invertY: false, quality: 'high' };
+const DEFAULTS = { sensitivity: 0.0022, fov: 80, invertY: false, quality: 'high', musicOn: true, voiceOn: true };
 
 export function loadSettings() {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; }
@@ -23,6 +23,8 @@ export class SettingsPanel {
       <label>Sensitivity <input type="range" id="sens" min="0.0005" max="0.006" step="0.0001" value="${this.s.sensitivity}"></label><br>
       <label>FOV <input type="range" id="fov" min="70" max="100" step="1" value="${this.s.fov}"></label><br>
       <label>Invert Y <input type="checkbox" id="iny" ${this.s.invertY ? 'checked' : ''}></label><br>
+      <label>Music <input type="checkbox" id="mus" ${this.s.musicOn ? 'checked' : ''}></label><br>
+      <label>Voice/SFX <input type="checkbox" id="voc" ${this.s.voiceOn ? 'checked' : ''}></label><br>
       <label>Quality
         <select id="q">
           <option value="high" ${this.s.quality === 'high' ? 'selected' : ''}>High</option>
@@ -35,6 +37,8 @@ export class SettingsPanel {
     bind('#sens', 'sensitivity', parseFloat);
     bind('#fov', 'fov', parseFloat);
     this.el.querySelector('#iny').onchange = (e) => { this.s.invertY = e.target.checked; saveSettings(this.s); this.onChange(this.s); };
+    this.el.querySelector('#mus').onchange = (e) => { this.s.musicOn = e.target.checked; saveSettings(this.s); this.onChange(this.s); };
+    this.el.querySelector('#voc').onchange = (e) => { this.s.voiceOn = e.target.checked; saveSettings(this.s); this.onChange(this.s); };
     this.el.querySelector('#q').onchange = (e) => { this.s.quality = e.target.value; saveSettings(this.s); this.onChange(this.s); };
   }
   toggle() { this.el.style.display = this.el.style.display === 'none' ? 'block' : 'none'; }
