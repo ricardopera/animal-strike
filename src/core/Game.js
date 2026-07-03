@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { FixedTimestep } from './FixedTimestep.js';
 import { InputState } from './InputState.js';
 import { ArenaBuilder } from '../world/ArenaBuilder.js';
@@ -36,6 +40,25 @@ const _shotMuzzle = new THREE.Vector3();
 const _pelletDir = new THREE.Vector3();
 const _shotMuzzle2 = new THREE.Vector3();
 const _shotFar = new THREE.Vector3();
+
+// A vertical gradient sky texture (zenith → horizon) used as the scene
+// background. Cheaper than a skybox mesh and reads as real atmosphere.
+function makeSkyTexture() {
+  const c = document.createElement('canvas');
+  c.width = 2; c.height = 256;
+  const ctx = c.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, 256);
+  g.addColorStop(0, '#5a8fcf');    // zenith — deeper blue
+  g.addColorStop(0.5, '#9cc4e8');  // mid sky
+  g.addColorStop(0.82, '#d8ecf7'); // haze near horizon
+  g.addColorStop(1, '#f0e8d8');    // warm horizon glow
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 2, 256);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 const _rayBox = new THREE.Box3();
 const _rayBoxMin = new THREE.Vector3();
 const _rayBoxMax = new THREE.Vector3();
@@ -48,18 +71,43 @@ export class Game {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    // Modern PBR pipeline: ACES filmic tone mapping + sRGB output for correct
+    // color, plus PCF soft shadow maps. These give the scene depth & realism
+    // instead of the previous flat-shaded, clipped-highlight look.
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x87ceeb);
-    this.scene.fog = new THREE.Fog(0x87ceeb, 60, 150);
+    // Gradient sky dome replaces the flat blue — a vertical gradient reads as
+    // atmosphere without a full skybox shader.
+    this.scene.background = makeSkyTexture();
+    this.scene.fog = new THREE.FogExp2(0xbfe3f5, 0.006);
 
     this.camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 500);
 
-    // Lighting
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x444466, 1.0));
-    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+    // Lighting — a warm/cool three-point rig with the key light casting shadows.
+    this.scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x4a4030, 0.55));
+    const dir = new THREE.DirectionalLight(0xfff2d6, 2.2);
     dir.position.set(40, 80, 30);
+    dir.castShadow = true;
+    dir.shadow.mapSize.set(2048, 2048);
+    dir.shadow.camera.near = 1;
+    dir.shadow.camera.far = 200;
+    dir.shadow.camera.left = -60;
+    dir.shadow.camera.right = 60;
+    dir.shadow.camera.top = 60;
+    dir.shadow.camera.bottom = -60;
+    dir.shadow.bias = -0.0004;
     this.scene.add(dir);
+    this.scene.add(dir.target);
+    this.sun = dir;
+    // Cool fill light from the opposite side to soften the key's hard shadows.
+    const fill = new THREE.DirectionalLight(0x88aaff, 0.4);
+    fill.position.set(-40, 40, -30);
+    this.scene.add(fill);
 
     // World
     this.colliders = new ColliderStore();
@@ -141,6 +189,20 @@ export class Game {
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
 
+    // Post-processing: bloom makes the FX (tracers, muzzle flash, sparks) glow
+    // and gives emissive surfaces a hot look. Gated by the quality setting.
+    this.bloomEnabled = true;
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.6,  // strength
+      0.4,  // radius
+      0.85  // threshold (only bright/emissive pixels bloom)
+    );
+    this.composer.addPass(this.bloomPass);
+    this.composer.addPass(new OutputPass());
+
     // Loop
     this.fixed = new FixedTimestep(1 / 60);
     this.running = false;
@@ -153,6 +215,7 @@ export class Game {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
+    if (this.composer) this.composer.setSize(window.innerWidth, window.innerHeight);
   }
 
   start() {
@@ -254,10 +317,21 @@ export class Game {
     this.music.setMuted(!s.musicOn);
     this.voice.setMuted(!s.voiceOn);
     // camera.fov is eased toward baseFov each frame in frame(), so just set baseFov here
-    if (s.quality === 'low') {
+    const low = s.quality === 'low';
+    if (low) {
       this.renderer.setPixelRatio(1);
     } else {
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    }
+    // Visual fidelity tiers: low quality drops shadows + bloom for FPS; high
+    // quality keeps both; medium keeps shadows but trims bloom resolution.
+    this.renderer.shadowMap.enabled = !low;
+    if (this.sun) this.sun.castShadow = !low;
+    this.bloomEnabled = s.quality === 'high' && !!this.composer;
+    if (this.bloomPass) {
+      // medium: weaker/cheaper bloom; high: full strength
+      this.bloomPass.strength = low ? 0 : (s.quality === 'high' ? 0.6 : 0.35);
+      this.bloomPass.radius = low ? 0 : (s.quality === 'high' ? 0.4 : 0.25);
     }
   }
 
@@ -393,6 +467,13 @@ export class Game {
     this.camera.rotation.y = this.player.yaw;
     this.camera.rotation.x = this.player.pitch;
     this.camera.updateMatrixWorld();
+    // Keep the sun's shadow frustum centered on the player so shadows stay
+    // crisp wherever you roam on the large map.
+    if (this.sun) {
+      this.sun.position.set(eye.x + 40, 80, eye.z + 30);
+      this.sun.target.position.set(eye.x, eye.y, eye.z);
+      this.sun.target.updateMatrixWorld();
+    }
     // First-person viewmodel: visible only while playing + alive
     const showFP = this.match.active && this.player.alive;
     this.firstPersonView.setVisible(showFP);
@@ -400,7 +481,12 @@ export class Game {
       this.firstPersonView.syncToCamera(this.camera);
       this.firstPersonView.update(realDt, Math.hypot(this.player.velocity.x, this.player.velocity.z));
     }
-    this.renderer.render(this.scene, this.camera);
+    // Render through the composer (bloom + output) when enabled, else direct.
+    if (this.bloomEnabled && this.composer) {
+      this.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
 
     // HUD + scoreboard
     this.hud.setHealth(this.player.health);

@@ -19,6 +19,10 @@ const COLORS = {
 // Build a box mesh with an optional procedural texture. The texture is shared
 // (cached by TextureFactory) and its repeat is set per-mesh to tile by surface size.
 // Signature: box(w, h, d, color, x, y, z, texName, texOpts)
+//
+// PBR tuning by texture type: metal surfaces get high metalness + low roughness
+// (so they pick up specular highlights and feel reflective); wood/concrete stay
+// rough and matte. Everything casts + receives shadows.
 function box(w, h, d, color, x, y, z, texName, texOpts) {
   let material;
   if (texName) {
@@ -26,15 +30,23 @@ function box(w, h, d, color, x, y, z, texName, texOpts) {
     // clone the texture so this mesh can have its own repeat without affecting the cache
     const t = tex.clone();
     t.needsUpdate = true;
+    t.colorSpace = THREE.SRGBColorSpace;
     // tile roughly once per 2 units of surface
     const rep = Math.max(1, Math.round(Math.max(w, h, d) / 2));
     t.repeat.set(rep, rep);
-    material = new THREE.MeshStandardMaterial({ map: t, flatShading: true });
+    const isMetal = texName === 'metal';
+    material = new THREE.MeshStandardMaterial({
+      map: t, flatShading: true,
+      metalness: isMetal ? 0.75 : 0.05,
+      roughness: isMetal ? 0.35 : 0.9,
+    });
   } else {
-    material = new THREE.MeshStandardMaterial({ color, flatShading: true });
+    material = new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.9 });
   }
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
   mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   return mesh;
 }
 

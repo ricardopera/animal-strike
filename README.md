@@ -28,6 +28,7 @@ Pick an animal-headed gunner, pick a weapon, and frag your way to 25 kills befor
 - **Full deathmatch loop** — 5-minute timer, 25-frag target, 2.5s respawns at the spawn farthest from enemies, killfeed (with headshot callouts), Tab scoreboard, VICTORY/DEFEATED end screen, play-again
 - **Polish** — synthesized WebAudio SFX **+ real generated music & voice** (MiniMax; synth fallback), dynamic crosshair, HP/ammo HUD with **bars, weapon icons, reload ring, hitmarker, killstreak counter**, sprint FOV kick, low-HP red vignette, and a settings panel (sensitivity / FOV / invert-Y / quality / music / voice) persisted to `localStorage`
 - **Richer arena** — ~50 buildings with twin towers, a central structure, cover clusters, sniper perches, and **procedural textures** (concrete / metal / wood) applied throughout
+- **Modern render pipeline** — **ACES filmic tone mapping** + sRGB output for cinematic color, **soft shadow maps** with a sun that follows the player, a **gradient sky** (zenith → warm horizon), **selective bloom** post-processing (FX glow: tracers, muzzle flash, sparks), additive-blended **glowing tracers** and **muzzle flash + dynamic point-light kick** per shot, PBR-tuned materials (metal surfaces are reflective, wood/concrete matte), and a warm/cool three-point light rig. Quality settings gate shadow/bloom tiers for performance.
 
 ---
 
@@ -114,9 +115,10 @@ Implementation plan: `docs/superpowers/plans/2026-07-02-animal-strike.md`
 
 ## 🛠️ Tech
 
-- [three.js](https://threejs.org/) r0.185 — WebGL rendering
+- [three.js](https://threejs.org/) r0.185 — WebGL rendering (incl. `EffectComposer` / `UnrealBloomPass` post-processing addons)
 - [Vite](https://vitejs.dev/) 8 — dev server + bundler
 - [Vitest](https://vitest.dev/) 4 — unit tests
+- [MiniMax](https://www.minimaxi.com/) — generated music & voice assets (`scripts/generate_assets.py`)
 - Vanilla ES modules throughout — no framework
 
 ## License
