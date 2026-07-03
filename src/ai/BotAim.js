@@ -38,8 +38,11 @@ export function turnToward(current, aimWorldPoint, fromPoint, turnSpeed, dt) {
   const dz = aimWorldPoint[2] - fromPoint[2];
   const dy = aimWorldPoint[1] - fromPoint[1];
   const horiz = Math.hypot(dx, dz);
-  const desiredYaw = Math.atan2(dx, -dz) + Math.PI; // align with player.yaw convention (-sin/-cos)
-  const desiredPitch = -Math.atan2(dy, horiz);
+  // Yaw convention: forward = (-sin(yaw), 0, -cos(yaw)). To face delta (dx,dz):
+  // sin(yaw) = -dx/horiz, cos(yaw) = -dz/horiz -> atan2(-dx, -dz).
+  const desiredYaw = Math.atan2(-dx, -dz);
+  // Pitch convention: positive pitch = look up. dy>0 (target above) -> positive pitch.
+  const desiredPitch = Math.atan2(dy, horiz);
   return {
     yaw: approachAngle(current.yaw, desiredYaw, turnSpeed * dt),
     pitch: approachAngle(current.pitch, desiredPitch, turnSpeed * dt * 0.6),
