@@ -159,10 +159,11 @@ export class FirstPersonView {
     } else {
       outPos.set(0, 0, 0);
     }
-    // forward = -Z of the muzzle in world space
+    // The model is rotated 180° (baseRot.y = PI) so its local +Z axis points
+    // down WORLD -Z = the camera's forward. getWorldDirection returns that
+    // local +Z in world space, which is already the forward we want — so do
+    // NOT negate it (negating was the bug: it flipped shots to fire backwards).
     this.muzzleRef.getWorldDirection(outDir);
-    // getWorldDirection returns +Z direction; our forward is -Z, so negate.
-    outDir.negate();
     return { pos: outPos, dir: outDir };
   }
 }
