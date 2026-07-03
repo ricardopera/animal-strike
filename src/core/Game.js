@@ -14,6 +14,8 @@ import { HitSparkPool } from '../fx/HitMarker.js';
 import { Crosshair } from '../ui/Crosshair.js';
 import { Hud } from '../ui/Hud.js';
 import { MainMenu } from '../ui/MainMenu.js';
+import { Scoreboard } from '../ui/Scoreboard.js';
+import { EndScreen } from '../ui/EndScreen.js';
 import { CharacterView } from '../player/CharacterView.js';
 import { EntityStore } from './EntityStore.js';
 import { AIController } from '../ai/AIController.js';
@@ -50,10 +52,10 @@ export class Game {
     this.flashes = new MuzzleFlashPool(this.scene);
     this.sparks = new HitSparkPool(this.scene);
 
-    // Entity store (local player + bots). Built fresh per match in startMatch.
+    // Entities + bots
     this.entities = new EntityStore();
     this.bots = [];
-    this.pendingShots = []; // local player's pending shots, drained each frame
+    this.pendingShots = [];
 
     // Local player
     this.player = createPlayer({ id: 'You', isLocal: true, position: new THREE.Vector3(0, 1, 15) });
@@ -66,15 +68,23 @@ export class Game {
     this.weapon.fireCallback = () => this.pendingShots.push({});
     this.entities.add(this.player);
 
-    // HUD + crosshair
+    // Match state (inactive until startMatch)
+    this.match = { active: false, timeLeft: MATCH.matchSeconds, fragTarget: MATCH.fragTarget, over: false };
+    this.respawnTimers = new Map();
+
+    // UI
     const uiRoot = document.getElementById('ui');
     this.hud = new Hud(uiRoot);
     this.crosshair = new Crosshair(uiRoot);
+    this.scoreboard = new Scoreboard(uiRoot);
+    this.scoreboard.attach();
+    this.endScreen = new EndScreen(uiRoot, { onPlayAgain: () => this.returnToMenu() });
     this.hud.setWeapon(this.weapon.def.name);
+    this.hud.setTime(this.match.timeLeft);
 
-    // Input + main menu (pointer lock is requested on PLAY click)
+    // Input + main menu
     this.input = new InputState(canvas);
-    this.menu = new MainMenu(document.getElementById('ui'), {
+    this.menu = new MainMenu(uiRoot, {
       onStart: ({ animal, weapon }) => this.startMatch(animal, weapon),
     });
 
@@ -111,14 +121,13 @@ export class Game {
     this.player.animalId = animalId;
     this.player.view.setAnimal(animalId);
     this.player.view.setWeapon(weaponId);
-    this.player.health = this.player.maxHealth;
-    this.player.alive = true;
-    this.player.view.setVisible(false);
+    this.respawnPlayer(this.player);
+
     this.weapon = new WeaponController(WEAPONS[weaponId]);
     this.weapon.fireCallback = () => this.pendingShots.push({});
     this.hud.setWeapon(this.weapon.def.name);
 
-    // Clear old bots, then spawn fresh ones.
+    // Clear old bots, spawn fresh ones.
     for (const bot of this.bots) {
       if (bot.view) bot.view.dispose();
       this.entities.remove(bot);
@@ -132,6 +141,8 @@ export class Game {
       const animal = ANIMAL_IDS[i % ANIMAL_IDS.length];
       const bot = createPlayer({ id: 'Bot ' + (i + 1), isLocal: false, position: sp });
       bot.animalId = animal;
+      bot.score = 0;
+      bot.deaths = 0;
       bot.view = new CharacterView(this.scene);
       bot.view.setAnimal(animal);
       bot.view.setWeapon('AR');
@@ -143,23 +154,92 @@ export class Game {
       this.bots.push(bot);
     }
 
+    // Reset match state
+    this.match = { active: true, timeLeft: MATCH.matchSeconds, fragTarget: MATCH.fragTarget, over: false };
+    this.respawnTimers.clear();
+    this.player.score = 0;
+    this.player.deaths = 0;
+    this.endScreen.hide();
     this.input.requestPointerLock();
   }
 
-  frame(realDt) {
-    // Look (consume once per render frame)
-    const look = this.input.consumeLook();
-    this.player.yaw -= look.dx;
-    this.player.pitch -= look.dy;
-    this.player.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.player.pitch));
+  returnToMenu() {
+    this.match.active = false;
+    this.match.over = true;
+    if (document.pointerLockElement) document.exitPointerLock();
+    for (const bot of this.bots) {
+      if (bot.view) bot.view.dispose();
+      this.entities.remove(bot);
+    }
+    this.bots = [];
+    this.menu.show();
+  }
 
-    // Intent
+  endMatch() {
+    if (this.match.over) return;
+    this.match.over = true;
+    this.match.active = false;
+    if (document.pointerLockElement) document.exitPointerLock();
+    const ranked = [...this.entities.players].sort((a, b) => b.score - a.score);
+    this.endScreen.show(ranked);
+  }
+
+  respawnPlayer(player) {
+    const others = this.entities.alive().filter(p => p !== player).map(p => p.position);
+    const sp = getRandomSpawn(others);
+    player.position.copy(sp);
+    player.velocity.set(0, 0, 0);
+    player.health = player.maxHealth;
+    player.alive = true;
+    player.yaw = 0;
+    player.pitch = 0;
+    if (player.weapon) {
+      player.weapon.ammo = player.weapon.def.mag;
+      player.weapon.reloading = false;
+      player.weapon.nextFireTime = 0;
+    } else if (player === this.player) {
+      // local player's current weapon lives on `this.weapon`, not player.weapon
+      this.weapon.ammo = this.weapon.def.mag;
+      this.weapon.reloading = false;
+      this.weapon.nextFireTime = 0;
+    }
+    if (player.view) player.view.setVisible(!player.isLocal); // local view stays hidden (first person)
+  }
+
+  frame(realDt) {
+    // Look (local player only, only while match active)
+    if (this.match.active) {
+      const look = this.input.consumeLook();
+      this.player.yaw -= look.dx;
+      this.player.pitch -= look.dy;
+      this.player.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.player.pitch));
+    }
     this.player.intent = this.input.buildIntent();
 
-    // Sim: movement + weapon for every player, each fixed tick
+    // Sim
     this.fixed.update(realDt, (dt) => {
-      if (this.player.alive) tickMovement(this.player, dt, this.colliders);
-      const firing = this.player.alive && this.player.intent.firing;
+      if (this.match.active) {
+        // Match timer
+        this.match.timeLeft -= dt;
+        if (this.match.timeLeft <= 0) {
+          this.match.timeLeft = 0;
+          this.endMatch();
+        }
+        // Respawns
+        for (const id of [...this.respawnTimers.keys()]) {
+          const left = this.respawnTimers.get(id) - dt;
+          if (left <= 0) {
+            this.respawnTimers.delete(id);
+            const p = this.entities.players.find(p => p.id === id);
+            if (p) this.respawnPlayer(p);
+          } else {
+            this.respawnTimers.set(id, left);
+          }
+        }
+      }
+
+      if (this.match.active && this.player.alive) tickMovement(this.player, dt, this.colliders);
+      const firing = this.match.active && this.player.alive && this.player.intent.firing;
       const reloadReq = this.input.consumeReloadRequest();
       this.weapon.update(dt, firing, reloadReq);
 
@@ -171,20 +251,25 @@ export class Game {
       }
     });
 
-    // Process all pending shots this frame (local player + bots)
-    for (const _shot of this.pendingShots) this.fireOneShot(this.player, this.weapon);
-    this.pendingShots.length = 0;
-    for (const bot of this.bots) {
-      for (const _shot of bot.pendingShots) this.fireOneShot(bot, bot.weapon);
-      bot.pendingShots.length = 0;
+    // Resolve pending shots (only while match active)
+    if (this.match.active) {
+      for (const _shot of this.pendingShots) this.fireOneShot(this.player, this.weapon);
+      this.pendingShots.length = 0;
+      for (const bot of this.bots) {
+        for (const _shot of bot.pendingShots) this.fireOneShot(bot, bot.weapon);
+        bot.pendingShots.length = 0;
+      }
+    } else {
+      this.pendingShots.length = 0;
+      for (const bot of this.bots) bot.pendingShots.length = 0;
     }
 
-    // FX lifetime
+    // FX
     this.tracers.update(realDt);
     this.flashes.update(realDt);
     this.sparks.update(realDt);
 
-    // Sync bot character views
+    // Bot views
     for (const bot of this.bots) {
       if (bot.view) {
         bot.view.setPosition(bot.position.x, bot.position.y, bot.position.z);
@@ -193,24 +278,24 @@ export class Game {
       }
     }
 
-    // Render: camera at local player's eye, oriented by yaw/pitch
+    // Camera
     const eye = eyePosition(this.player);
     this.camera.position.copy(eye);
     this.camera.rotation.set(0, 0, 0);
     this.camera.rotation.order = 'YXZ';
     this.camera.rotation.y = this.player.yaw;
     this.camera.rotation.x = this.player.pitch;
-
     this.renderer.render(this.scene, this.camera);
 
-    // HUD
+    // HUD + scoreboard
     this.hud.setHealth(this.player.health);
     this.hud.setAmmo(this.weapon.ammo, this.weapon.def.mag);
+    this.hud.setTime(this.match.timeLeft);
     const speed = Math.hypot(this.player.velocity.x, this.player.velocity.z);
     this.crosshair.setSpread(14 + speed * 2);
+    this.scoreboard.update(this.entities.players);
   }
 
-  // Generalized hitscan: any shooter can fire at any other player.
   fireOneShot(shooter, weapon) {
     const def = weapon.def;
     const origin = new THREE.Vector3(shooter.position.x, shooter.position.y + M.EYE_HEIGHT, shooter.position.z);
@@ -225,7 +310,6 @@ export class Game {
     dir.normalize();
 
     const MAX = 500;
-    // nearest enemy player hit
     let best = null;
     for (const other of this.entities.players) {
       if (other === shooter || !other.alive) continue;
@@ -255,6 +339,8 @@ export class Game {
           const victimName = best.target.isLocal ? 'You' : best.target.id;
           const shooterName = shooter.isLocal ? 'You' : shooter.id;
           this.hud.addKill(`${shooterName} fragged ${victimName}`);
+          this.respawnTimers.set(best.target.id, MATCH.respawnDelay);
+          if (shooter.score >= this.match.fragTarget) this.endMatch();
         }
       } else {
         this.sparks.spawn(best.point, new THREE.Vector3(0, 1, 0), 0xffd24a);
@@ -264,7 +350,6 @@ export class Game {
       this.tracers.spawn(muzzle, far);
     }
 
-    // Recoil (local player only — bots already have aim error baked in)
     if (shooter.isLocal) {
       shooter.pitch += def.recoil.vertical * (Math.random() * 0.5 + 0.5);
       shooter.yaw += (Math.random() - 0.5) * def.recoil.horizontal;
@@ -273,7 +358,6 @@ export class Game {
   }
 }
 
-// Ray vs a player's capsule approximated as an AABB.
 function playerRayHit(player, origin, dir, maxDist) {
   const r = 0.5, h = 1.8;
   const box = new THREE.Box3(
@@ -287,7 +371,6 @@ function playerRayHit(player, origin, dir, maxDist) {
   return { dist, point: hit.clone() };
 }
 
-// Linear damage falloff: full up to start, drops to 40% at end, stays at 40% past end.
 function applyFalloff(damage, dist, start, end) {
   if (dist <= start) return damage;
   if (dist >= end) return damage * 0.4;
