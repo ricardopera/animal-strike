@@ -77,8 +77,7 @@ export class Game {
     this.pendingShots = [];
 
     // Local player
-    this.player = createPlayer({ id: 'You', isLocal: true, position: new THREE.Vector3(0, 1, 15) });
-    this.player.animalId = 'FOX';
+    this.player = createPlayer({ id: 'You', isLocal: true, position: new THREE.Vector3(0, 1, 15), animalId: 'FOX' });
     this.player.view = new CharacterView(this.scene);
     this.player.view.setAnimal('FOX');
     this.player.view.setWeapon('AR');
@@ -173,6 +172,7 @@ export class Game {
     // Reset local player
     this.player.loadout.primary = weaponId;
     this.player.animalId = animalId;
+    this.applyAnimalStats(this.player, animalId);
     this.player.view.setAnimal(animalId);
     this.player.view.setWeapon(weaponId);
     this.respawnPlayer(this.player);
@@ -196,18 +196,22 @@ export class Game {
     this.bots = [];
     const occupied = [this.player.position];
     const diff = MATCH.botDifficulty.normal;
+    // Rotating loadouts so bots aren't all identical AR users. Each bot gets a
+    // different weapon, cycling through the roster for variety.
+    const botWeaponIds = Object.keys(WEAPONS);
     for (let i = 0; i < MATCH.botCount; i++) {
       const sp = getRandomSpawn(occupied);
       occupied.push(sp);
       const animal = ANIMAL_IDS[i % ANIMAL_IDS.length];
-      const bot = createPlayer({ id: 'Bot ' + (i + 1), isLocal: false, position: sp });
-      bot.animalId = animal;
+      const weaponId = botWeaponIds[i % botWeaponIds.length];
+      const bot = createPlayer({ id: 'Bot ' + (i + 1), isLocal: false, position: sp, animalId: animal });
+      bot.loadout.primary = weaponId;
       bot.score = 0;
       bot.deaths = 0;
       bot.view = new CharacterView(this.scene);
       bot.view.setAnimal(animal);
-      bot.view.setWeapon('AR');
-      bot.weapon = new WeaponController(WEAPONS.AR);
+      bot.view.setWeapon(weaponId);
+      bot.weapon = new WeaponController(WEAPONS[weaponId]);
       bot.pendingShots = [];
       bot.weapon.fireCallback = () => bot.pendingShots.push({});
       bot.brain = new AIController(bot, diff);
@@ -227,6 +231,20 @@ export class Game {
     this._lastFragMilestone = 0;
     this._lowTimeAnnounced = false;
     this.input.requestPointerLock();
+  }
+
+  // Re-apply an animal's stat block to a player (used when the local player
+  // re-picks an animal between matches, since stats are snapshot at create time).
+  applyAnimalStats(player, animalId) {
+    const animal = ANIMALS[animalId];
+    if (!animal) return;
+    player.animalId = animalId;
+    player.speedMul = animal.speedMul;
+    player.jumpMul = animal.jumpMul;
+    player.sizeMul = animal.sizeMul;
+    player.maxHealth = Math.round(100 * animal.hpMul);
+    // full heal to the new maximum whenever the roster changes
+    player.health = player.maxHealth;
   }
 
   applySettings(s) {
@@ -428,14 +446,26 @@ export class Game {
     this.flashes.spawn(_shotMuzzle);
     this.playShootSfx(def.id);
 
+    // Effective spread = base weapon spread + a penalty that scales with the
+    // shooter's horizontal speed (running) and a flat bonus while airborne.
+    // This rewards stopping to shoot and punishes jump-shooting, giving each
+    // weapon a distinct "feel" for accuracy on the move.
+    const hSpeed = Math.hypot(shooter.velocity.x, shooter.velocity.z);
+    const airborne = !shooter.onGround;
+    let spread = def.spread;
+    if (def.moveSpreadPenalty) {
+      spread += hSpeed * def.moveSpreadPenalty;
+      if (airborne) spread += def.moveSpreadPenalty * 8; // big inaccuracy while jumping
+    }
+
     // Fire N pellets (shotgun) or 1 (everything else). Each pellet gets its own spread + ray.
     const pellets = def.pellets || 1;
     for (let p = 0; p < pellets; p++) {
       // scratch per-pellet direction (don't clobber baseDir for the next pellet)
       _pelletDir.copy(baseDir);
-      _pelletDir.x += (Math.random() - 0.5) * def.spread;
-      _pelletDir.y += (Math.random() - 0.5) * def.spread;
-      _pelletDir.z += (Math.random() - 0.5) * def.spread;
+      _pelletDir.x += (Math.random() - 0.5) * spread;
+      _pelletDir.y += (Math.random() - 0.5) * spread;
+      _pelletDir.z += (Math.random() - 0.5) * spread;
       _pelletDir.normalize();
       this.fireOnePellet(shooter, def, origin, _pelletDir);
     }
@@ -465,22 +495,25 @@ export class Game {
     for (const other of this.entities.players) {
       if (other === shooter || !other.alive) continue;
       const hit = playerRayHit(other, origin, dir, MAX);
-      if (hit && (!best || hit.dist < best.dist)) best = { dist: hit.dist, point: hit.point, target: other };
+      if (hit && (!best || hit.dist < best.dist)) best = { dist: hit.dist, point: hit.point, target: other, head: hit.head };
     }
     const wallHit = this.colliders.raycast(origin, dir, MAX);
     if (wallHit && (!best || wallHit.dist < best.dist)) {
-      best = { dist: wallHit.dist, point: wallHit.point, target: null };
+      best = { dist: wallHit.dist, point: wallHit.point, target: null, head: false };
     }
     _shotMuzzle2.copy(origin).addScaledVector(dir, 0.6);
 
     if (best) {
       this.tracers.spawn(_shotMuzzle2, best.point);
       if (best.target) {
-        const dmg = applyFalloff(def.damage, best.dist, def.falloffStart, def.falloffEnd);
+        let dmg = applyFalloff(def.damage, best.dist, def.falloffStart, def.falloffEnd);
+        const headshot = best.head && def.headshotMul && def.headshotMul > 1;
+        if (headshot) dmg *= def.headshotMul;
         best.target.health -= dmg;
-        this.sparks.spawn(best.point, new THREE.Vector3(0, 1, 0), 0xff3344);
+        // red sparks for body, bright orange for a headshot
+        this.sparks.spawn(best.point, new THREE.Vector3(0, 1, 0), headshot ? 0xffaa22 : 0xff3344);
         Sfx.hit();
-        this.damageNumbers.spawn(best.point, dmg);
+        this.damageNumbers.spawn(best.point, Math.round(dmg), headshot);
         // Hitmarker: only when the shooter is the local player (kill=true if this hit kills).
         if (shooter.isLocal) this.hud.showHitmarker(best.target.health <= 0);
         if (best.target.isLocal) {
@@ -495,7 +528,8 @@ export class Game {
           if (best.target.view) best.target.view.setVisible(false);
           const victimName = best.target.isLocal ? 'You' : best.target.id;
           const shooterName = shooter.isLocal ? 'You' : shooter.id;
-          this.hud.addKill(`${shooterName} fragged ${victimName}`);
+          const verb = headshot ? 'headshotted' : 'fragged';
+          this.hud.addKill(`${shooterName} ${verb} ${victimName}`);
           Sfx.kill();
           // Voice: killer gets a kill grunt (pitched by their animal); milestone every 5 kills.
           if (shooter.isLocal) this.voice.play('gruntKill', pitchForAnimal(this.player.animalId, ANIMALS));
@@ -527,8 +561,12 @@ export class Game {
   }
 }
 
+// Body box hit test with a separate head zone (top ~0.3m of the capsule).
+// sizeMul widens/tightens the box so bigger animals are easier to hit.
+// Returns { dist, point, head } or null.
 function playerRayHit(player, origin, dir, maxDist) {
-  const r = 0.5, h = 1.8;
+  const sm = player.sizeMul || 1;
+  const r = 0.5 * sm, h = 1.8 * sm;
   _rayBoxMin.set(player.position.x - r, player.position.y, player.position.z - r);
   _rayBoxMax.set(player.position.x + r, player.position.y + h, player.position.z + r);
   _rayBox.set(_rayBoxMin, _rayBoxMax);
@@ -537,7 +575,9 @@ function playerRayHit(player, origin, dir, maxDist) {
   if (!hit) return null;
   const dist = origin.distanceTo(hit);
   if (dist > maxDist) return null;
-  return { dist, point: hit.clone() };
+  // Head zone: top 0.3m of the hitbox. Head center sits at y+1.55..y+h.
+  const head = hit.y >= player.position.y + h - 0.3;
+  return { dist, point: hit.clone(), head };
 }
 
 function applyFalloff(damage, dist, start, end) {

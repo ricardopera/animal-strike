@@ -7,13 +7,15 @@ export class DamageNumbers {
     this.camera = camera;
     this.items = [];
   }
-  spawn(worldPoint, amount, color = '#ffe08a') {
+  spawn(worldPoint, amount, headshot = false) {
     const el = document.createElement('div');
-    el.textContent = Math.round(amount);
-    el.style.cssText = `position:absolute;color:${color};font-weight:700;font-size:18px;
-      text-shadow:0 2px 3px rgba(0,0,0,.7);pointer-events:none;transition:transform .6s,opacity .6s;`;
+    const color = headshot ? '#ff7a3c' : '#ffe08a';
+    const size = headshot ? 26 : 18;
+    el.textContent = headshot ? `${Math.round(amount)}!` : Math.round(amount);
+    el.style.cssText = `position:absolute;color:${color};font-weight:800;font-size:${size}px;
+      text-shadow:0 2px 3px rgba(0,0,0,.8);pointer-events:none;transition:transform .6s,opacity .6s;`;
     this.root.appendChild(el);
-    this.items.push({ el, world: worldPoint.clone(), life: 0.6 });
+    this.items.push({ el, world: worldPoint.clone(), life: headshot ? 0.8 : 0.6 });
   }
   update(dt) {
     const v = new THREE.Vector3();

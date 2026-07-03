@@ -45,7 +45,8 @@ export function tickMovement(player, dt, colliderStore) {
   const hasInput = _wish.lengthSq() > 0.0001;
   if (hasInput) _wish.normalize();
 
-  const maxSpeed = intent.sprint ? M.SPRINT : M.WALK;
+  const pMul = player.speedMul || 1;
+  const maxSpeed = (intent.sprint ? M.SPRINT : M.WALK) * pMul;
   const accel = player.onGround ? M.ACCEL : M.AIR_ACCEL;
 
   if (player.onGround) {
@@ -94,7 +95,7 @@ export function tickMovement(player, dt, colliderStore) {
   // Jump (and buffer for bhop chaining if pressed in the air just before landing)
   if (intent.jump) {
     if (player.onGround) {
-      player.velocity.y = M.JUMP_VELOCITY;
+      player.velocity.y = M.JUMP_VELOCITY * (player.jumpMul || 1);
       player.onGround = false;
     } else {
       // in the air — buffer the jump so a press just before landing chains into a bhop
@@ -160,15 +161,17 @@ export function tickMovement(player, dt, colliderStore) {
 }
 
 export function applyBhopOnLand(player) {
+  const pMul = player.speedMul || 1;
   if (player.moveState.bhopBuffer > 0) {
     // chain the bhop: keep speed, re-jump, cap at MAX_BHOP
     const speed = Math.hypot(player.velocity.x, player.velocity.z);
-    if (speed > M.MAX_BHOP) {
-      const s = M.MAX_BHOP / speed;
+    const cap = M.MAX_BHOP * pMul;
+    if (speed > cap) {
+      const s = cap / speed;
       player.velocity.x *= s;
       player.velocity.z *= s;
     }
-    player.velocity.y = M.JUMP_VELOCITY;
+    player.velocity.y = M.JUMP_VELOCITY * (player.jumpMul || 1);
     player.onGround = false;
   } else {
     // landed without jump -> clamp to sprint (friction will continue next ticks)

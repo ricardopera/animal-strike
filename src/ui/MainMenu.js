@@ -20,22 +20,23 @@ export class MainMenu {
     this.el.innerHTML = `
       <h1 style="font-size:48px;margin:0 0 8px;letter-spacing:2px;">ANIMAL<span style="color:#ffb84d">STRIKE</span></h1>
       <p style="opacity:.7;margin:0 0 24px;">Pick your animal and weapon</p>
-      <div style="display:flex;gap:24px;margin-bottom:24px;flex-wrap:wrap;justify-content:center;max-width:720px;">
+      <div style="display:flex;gap:24px;margin-bottom:24px;flex-wrap:wrap;justify-content:center;max-width:820px;">
         ${ANIMAL_IDS.map(id => {
           const a = ANIMALS[id];
           return `<button data-animal="${id}" style="
             background:${this.selectedAnimal===id?'#ffb84d':'#222'};color:#fff;border:none;
-            padding:12px 16px;border-radius:8px;cursor:pointer;font-size:14px;">
-            ${a.name}<br><small style="opacity:.7">spd ×${a.speedMul.toFixed(2)} hp ×${a.hpMul.toFixed(2)}</small>
+            padding:12px 16px;border-radius:8px;cursor:pointer;font-size:14px;text-align:left;">
+            ${a.name} <small style="opacity:.6">${a.role}</small><br>
+            <small style="opacity:.75">spd ×${a.speedMul.toFixed(2)} hp ×${a.hpMul.toFixed(2)} jmp ×${a.jumpMul.toFixed(2)}</small>
           </button>`;
         }).join('')}
       </div>
-      <div style="display:flex;gap:16px;margin-bottom:32px;">
+      <div style="display:flex;gap:16px;margin-bottom:32px;flex-wrap:wrap;justify-content:center;">
         ${Object.keys(WEAPONS).map(id => `
           <button data-weapon="${id}" style="
             background:${this.selectedWeapon===id?'#ffb84d':'#222'};color:#fff;border:none;
             padding:10px 18px;border-radius:8px;cursor:pointer;">
-            ${WEAPONS[id].name}
+            ${WEAPONS[id].name}<br><small style="opacity:.6">hs ×${WEAPONS[id].headshotMul.toFixed(1)}</small>
           </button>`).join('')}
       </div>
       <button id="play-btn" style="background:#4dffb8;color:#102020;border:none;padding:14px 48px;
