@@ -121,7 +121,12 @@ export class CharacterView {
     this.group.add(this.gun);
   }
   update(dt, speed, yaw, pitch) {
-    this.group.rotation.y = yaw;
+    // Heads/snouts/gun barrels are authored facing local +Z, but the game's
+    // aim/movement forward is -Z (at yaw=0, forward = (-sin0,0,-cos0) = (0,0,-1)).
+    // Rotating +Z by `yaw` alone would make the model face +Z world = opposite of
+    // aim-forward, so characters visibly ran/shot backward. Add PI so the model's
+    // local +Z front aligns with aim-forward. (See CharacterView.facing.test.js)
+    this.group.rotation.y = yaw + Math.PI;
     // Position group at the player's FEET — caller sets group.position separately.
     this.animTime += dt * Math.max(0.5, speed);
     const swing = Math.min(1, speed / 6) * 0.5;
