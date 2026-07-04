@@ -44,7 +44,9 @@ export class Sim {
 
   addHuman(name, animalId, weaponId, position) {
     const id = 'H' + (this.humans.size + 1);
-    const p = createPlayer({ id, isLocal: false, position: position || this._freeSpawn(), animalId });
+    // Before a match starts there's no active map/spawn set; default to origin.
+    const startPos = position || (this.activeMap ? this._freeSpawn() : new THREE.Vector3(0, 1, 0));
+    const p = createPlayer({ id, isLocal: false, position: startPos, animalId });
     p.name = name;
     p.loadout.primary = weaponId;
     p.weapon = new WeaponController(WEAPONS[weaponId]);
