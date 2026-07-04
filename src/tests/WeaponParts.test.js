@@ -43,4 +43,17 @@ describe('WeaponParts factory', () => {
       expect(muzzleLocal).toBeInstanceOf(THREE.Vector3);
     }
   });
+
+  it('setActiveSkin(id) updates the gunmetal + steel material properties', () => {
+    const beforeColor = WP.mats.gunmetal.color.getHex();
+    const beforeMetal = WP.mats.gunmetal.metalness;
+    WP.setActiveSkin('gold');   // gold: color 0xd4a040, metalness 0.9
+    expect(WP.mats.gunmetal.color.getHex()).toBe(0xd4a040);
+    expect(WP.mats.gunmetal.metalness).toBeCloseTo(0.9, 5);
+    expect(WP.getActiveSkin()).toBe('gold');
+    // restore to avoid affecting other tests
+    WP.setActiveSkin('gunmetal');
+    expect(WP.mats.gunmetal.color.getHex()).toBe(beforeColor);
+    expect(WP.mats.gunmetal.metalness).toBeCloseTo(beforeMetal, 5);
+  });
 });

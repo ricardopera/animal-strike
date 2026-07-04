@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { loadOrFallback } from '../textures/AssetLoader.js';
+import { getSkin } from '../config/WeaponSkins.js';
 
 // Shared factory of rounded weapon primitives + a material library. Used by both
 // the first-person viewmodel and the third-person bot gun so weapons have one
@@ -7,12 +8,9 @@ import { loadOrFallback } from '../textures/AssetLoader.js';
 // facing +Z (muzzle at +Z tip); the FP group rotates by PI to face camera-forward (-Z).
 
 // ---- Material library (shared across all weapons) ----
-const TEX = {
-  gunmetal: '/textures/weapons/gunmetal.png',
-  steel:    '/textures/weapons/worn_steel.png',
-  wood:     '/textures/weapons/wood_stock.png',
-};
-
+// gunmetal + steel are SKIN-DRIVEN: setActiveSkin(id) rewrites their map + PBR
+// params from the selected WeaponSkins entry. Because these mats are shared
+// references across every weapon part (FP + TP), one call restyles everything.
 export const mats = {
   gunmetal: new THREE.MeshStandardMaterial({ color: 0x4a4f58, metalness: 0.6, roughness: 0.45 }),
   polymer:  new THREE.MeshStandardMaterial({ color: 0x14161a, metalness: 0.0,  roughness: 0.78 }),
@@ -21,10 +19,34 @@ export const mats = {
   wood:     new THREE.MeshStandardMaterial({ color: 0x6b4226, metalness: 0.0, roughness: 0.8 }),
   glass:    new THREE.MeshStandardMaterial({ color: 0x113355, metalness: 0.6, roughness: 0.15 }),
 };
-// Apply generated skin textures when they load (non-blocking; flat color until then).
-loadOrFallback(TEX.gunmetal, mats.gunmetal);
-loadOrFallback(TEX.steel,    mats.steel);
-loadOrFallback(TEX.wood,     mats.wood);
+
+// Apply the active weapon skin to the gunmetal + steel materials. Call on game
+// start + whenever the player picks a new skin. Pure visual — affects every
+// weapon part that uses mats.gunmetal / mats.steel (i.e. barrels, receivers,
+// scopes, muzzle devices). Polymer/grip furniture is intentionally unaffected.
+let _activeSkinId = null;
+export function setActiveSkin(skinId) {
+  const s = getSkin(skinId);
+  _activeSkinId = s.id;
+  applySkinToMat(mats.gunmetal, s);
+  applySkinToMat(mats.steel, s);
+}
+export function getActiveSkin() { return _activeSkinId; }
+
+function applySkinToMat(m, s) {
+  m.map = null;
+  m.color.setHex(s.color);
+  m.metalness = s.metalness;
+  m.roughness = s.roughness;
+  m.emissive.setHex(s.emissive || 0x000000);
+  m.emissiveIntensity = s.emissiveIntensity || 0;
+  m.needsUpdate = true;
+  if (s.map) loadOrFallback(s.map, m);
+}
+
+// Apply the default skin at module load so weapons look right before the player
+// explicitly chooses one (and so the menu/initial state isn't untextured).
+setActiveSkin('gunmetal');
 
 function mesh(geo, material, x = 0, y = 0, z = 0) {
   const m = new THREE.Mesh(geo, material);
