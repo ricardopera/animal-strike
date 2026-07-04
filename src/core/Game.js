@@ -29,7 +29,7 @@ import { getRandomSpawn } from '../world/SpawnPoints.js';
 import { ANIMAL_IDS, ANIMALS } from '../config/Animals.js';
 import { Sfx, resumeAudio } from '../audio/Audio.js';
 import { MusicPlayer } from '../audio/MusicPlayer.js';
-import { VoicePlayer, pitchForAnimal } from '../audio/VoicePlayer.js';
+import { VoicePlayer } from '../audio/VoicePlayer.js';
 import { SettingsPanel } from '../ui/Settings.js';
 import { DamageNumbers } from '../fx/DamageNumbers.js';
 
@@ -356,6 +356,8 @@ export class Game {
     const ranked = [...this.entities.players].sort((a, b) => b.score - a.score);
     const youWon = ranked[0] && ranked[0].isLocal;
     this.voice.play(youWon ? 'victory' : 'defeat');
+    // The winner's animal speaks its victory line in its own voice.
+    if (ranked[0] && ranked[0].animalId) this.voice.playAnimal(ranked[0].animalId, 'victory');
     this.music.play('menu');
     this.endScreen.show(ranked);
   }
@@ -380,6 +382,8 @@ export class Game {
       this.weapon.nextFireTime = 0;
     }
     if (player.view) player.view.setVisible(!player.isLocal); // local view stays hidden (first person)
+    // Per-animal spawn voice: the respawning player speaks in their own voice.
+    this.voice.playAnimal(player.animalId, 'spawn');
   }
 
   frame(realDt) {
@@ -428,6 +432,12 @@ export class Game {
         bot.brain.update(dt, this.entities.enemiesOf(bot), this.colliders);
         tickMovement(bot, dt, this.colliders);
         bot.weapon.update(dt, bot.intent.firing, bot.intent.reloadRequested);
+        // Occasional per-animal taunt for ambience (jittered cooldown ~10-18s).
+        bot._tauntTimer = (bot._tauntTimer != null ? bot._tauntTimer : 8 + Math.random() * 8) - dt;
+        if (bot._tauntTimer <= 0) {
+          bot._tauntTimer = 10 + Math.random() * 8;
+          this.voice.playAnimal(bot.animalId, 'taunt');
+        }
       }
     });
 
@@ -604,8 +614,9 @@ export class Game {
         if (shooter.isLocal) this.hud.showHitmarker(best.target.health <= 0);
         if (best.target.isLocal) {
           Sfx.hurt();
-          this.voice.play('gruntHurt', pitchForAnimal(this.player.animalId, ANIMALS));
         }
+        // Per-animal hurt voice: the VICTIM speaks in their own animal's voice.
+        this.voice.playAnimal(best.target.animalId, 'hurt');
         if (best.target.health <= 0) {
           best.target.health = 0;
           best.target.alive = false;
@@ -617,14 +628,13 @@ export class Game {
           const verb = headshot ? 'headshotted' : 'fragged';
           this.hud.addKill(`${shooterName} ${verb} ${victimName}`);
           Sfx.kill();
-          // Voice: killer gets a kill grunt (pitched by their animal); milestone every 5 kills.
-          if (shooter.isLocal) this.voice.play('gruntKill', pitchForAnimal(this.player.animalId, ANIMALS));
+          // Per-animal voices: KILLER taunts the kill, VICTIM cries death (each in their own voice).
+          this.voice.playAnimal(shooter.animalId, 'kill');
+          this.voice.playAnimal(best.target.animalId, 'death');
           if (shooter.score > 0 && shooter.score % 5 === 0 && shooter.score !== this._lastFragMilestone) {
             this._lastFragMilestone = shooter.score;
             this.voice.play('fragMilestone');
           }
-          // Victim death grunt.
-          if (best.target.isLocal) this.voice.play('gruntDeath', pitchForAnimal(this.player.animalId, ANIMALS));
           this.respawnTimers.set(best.target.id, MATCH.respawnDelay);
           // Killstreak: local killer increments, local victim resets.
           if (shooter.isLocal) {
