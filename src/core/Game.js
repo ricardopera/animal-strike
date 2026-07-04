@@ -32,6 +32,8 @@ import { Sfx, resumeAudio } from '../audio/Audio.js';
 import { MusicPlayer } from '../audio/MusicPlayer.js';
 import { VoicePlayer } from '../audio/VoicePlayer.js';
 import { NetClient } from '../net/NetClient.js';
+import { setActiveSkin as setWeaponSkin } from '../player/WeaponParts.js';
+import { DEFAULT_SKIN } from '../config/WeaponSkins.js';
 import { RemoteView } from '../net/RemoteView.js';
 import { SettingsPanel } from '../ui/Settings.js';
 import { DamageNumbers } from '../fx/DamageNumbers.js';
@@ -186,8 +188,12 @@ export class Game {
     this.input = new InputState(canvas);
     this.settings = new SettingsPanel(uiRoot, { onChange: (s) => this.applySettings(s) });
     this.menu = new MainMenu(uiRoot, {
-      onStart: ({ mode, animal, weapon, map, rotate, address }) => {
+      onStart: ({ mode, animal, weapon, skin, map, rotate, address }) => {
         this.rotateMaps = rotate !== false;
+        // Apply the chosen weapon skin (purely client-side visual; affects all
+        // weapons the player holds). Done before the match starts so the gun is
+        // skinned from the first frame.
+        setWeaponSkin(skin || DEFAULT_SKIN);
         if (mode === 'host' || mode === 'join') {
           this.startMultiplayer(mode, address, animal, weapon, map);
         } else {

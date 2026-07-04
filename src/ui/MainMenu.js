@@ -1,6 +1,7 @@
 import { ANIMALS, ANIMAL_IDS } from '../config/Animals.js';
 import { WEAPONS } from '../config/Weapons.js';
 import { MAPS } from '../world/Maps.js';
+import { WEAPON_SKINS, DEFAULT_SKIN } from '../config/WeaponSkins.js';
 
 const MODES = [
   { id: 'single', label: 'Single Player', desc: 'vs bots, local' },
@@ -19,6 +20,7 @@ export class MainMenu {
     this.rotateMaps = localStorage.getItem('as_rotate') !== 'false'; // default true
     this.selectedMode = localStorage.getItem('as_mode') || 'single';
     this.joinAddress = localStorage.getItem('as_join_addr') || 'localhost:8080';
+    this.selectedSkin = localStorage.getItem('as_skin') || DEFAULT_SKIN;
     this.el = document.createElement('div');
     this.el.style.cssText = `
       position:absolute;inset:0;background:rgba(10,14,20,.85);
@@ -63,6 +65,19 @@ export class MainMenu {
             ${WEAPONS[id].name}<br><small style="opacity:.6">hs ×${WEAPONS[id].headshotMul.toFixed(1)}</small>
           </button>`).join('')}
       </div>
+      <div style="margin-bottom:18px;">
+        <div style="opacity:.6;font-size:12px;margin-bottom:6px;text-align:center;">WEAPON SKIN</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:760px;">
+          ${WEAPON_SKINS.map(s => {
+            const swatch = '#' + s.color.toString(16).padStart(6, '0');
+            return `<button data-skin="${s.id}" style="
+              background:${this.selectedSkin===s.id?'#ffb84d':'#222'};color:#fff;border:none;
+              padding:7px 12px;border-radius:6px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:6px;">
+              <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${swatch};border:1px solid #555;"></span>${s.name}
+            </button>`;
+          }).join('')}
+        </div>
+      </div>
 
       ${isJoin ? `
         <div style="margin-bottom:16px;display:flex;align-items:center;gap:8px;">
@@ -104,6 +119,9 @@ export class MainMenu {
     this.el.querySelectorAll('[data-weapon]').forEach(b => {
       b.onclick = () => { this.selectedWeapon = b.dataset.weapon; localStorage.setItem('as_weapon', this.selectedWeapon); this.render(); };
     });
+    this.el.querySelectorAll('[data-skin]').forEach(b => {
+      b.onclick = () => { this.selectedSkin = b.dataset.skin; localStorage.setItem('as_skin', this.selectedSkin); this.render(); };
+    });
     this.el.querySelectorAll('[data-map]').forEach(b => {
       b.onclick = () => { this.selectedMap = b.dataset.map; localStorage.setItem('as_map', this.selectedMap); this.render(); };
     });
@@ -117,6 +135,7 @@ export class MainMenu {
         mode: this.selectedMode,
         animal: this.selectedAnimal,
         weapon: this.selectedWeapon,
+        skin: this.selectedSkin,
         map: this.selectedMap,
         rotate: this.rotateMaps,
         address: this.joinAddress,
