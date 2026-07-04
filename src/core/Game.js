@@ -91,6 +91,12 @@ export class Game {
     this.scene.background = makeSkyTexture();
     this.scene.fog = new THREE.FogExp2(0xbfe3f5, 0.006);
 
+    // PMREM environment map: gives metallic PBR materials (weapon skins, metal
+    // arena parts) something to reflect. Derived from the sky gradient so the
+    // reflected ambient color matches each map's mood. Rebuilt per-map in loadMap.
+    this.pmrem = new THREE.PMREMGenerator(this.renderer);
+    this._envTex = null;
+
     this.camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 500);
 
     // Lighting — a warm/cool three-point rig with the key light casting shadows.
@@ -254,8 +260,25 @@ export class Game {
     this.activeMap = map;
     this.scene.background = makeSkyTexture(map.palette.sky);
     this.scene.fog = new THREE.FogExp2(map.palette.fog, map.palette.fogDensity);
+    // Rebuild the environment map from this map's sky so metallic surfaces
+    // reflect the right ambient color (fixes dark weapon skins).
+    this._applyEnvironment(map.palette.sky);
     this.arenaGroup = map.build(this.scene, this.colliders, this.buildHelper);
   }
+
+  // Build a PMREM cubemap environment from the sky gradient and assign it to
+  // scene.environment. Gives MeshStandardMaterial metals (weapons, etc.)
+  // image-based lighting to reflect — without this, high-metalness surfaces
+  // render nearly black because they have no diffuse albedo to speak of.
+  _applyEnvironment(stops) {
+    if (!this.pmrem) return;
+    const skyTex = makeSkyTexture(stops);
+    const env = this.pmrem.fromEquirectangular(skyTex).texture;
+    if (this._envTex) this._envTex.dispose();
+    this.scene.environment = env;
+    this._envTex = env;
+  }
+
 
   start() {
     this.running = true;

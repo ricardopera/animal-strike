@@ -14,9 +14,9 @@ const TEX = {
 };
 
 export const mats = {
-  gunmetal: new THREE.MeshStandardMaterial({ color: 0x2b2f36, metalness: 0.85, roughness: 0.38 }),
+  gunmetal: new THREE.MeshStandardMaterial({ color: 0x4a4f58, metalness: 0.6, roughness: 0.45 }),
   polymer:  new THREE.MeshStandardMaterial({ color: 0x14161a, metalness: 0.0,  roughness: 0.78 }),
-  steel:    new THREE.MeshStandardMaterial({ color: 0x3a3e44, metalness: 0.95, roughness: 0.25 }),
+  steel:    new THREE.MeshStandardMaterial({ color: 0x6a6e76, metalness: 0.7, roughness: 0.3 }),
   accent:   new THREE.MeshStandardMaterial({ color: 0xffb84d, metalness: 0.2, roughness: 0.4, emissive: 0xff8800, emissiveIntensity: 0.4 }),
   wood:     new THREE.MeshStandardMaterial({ color: 0x6b4226, metalness: 0.0, roughness: 0.8 }),
   glass:    new THREE.MeshStandardMaterial({ color: 0x113355, metalness: 0.6, roughness: 0.15 }),
