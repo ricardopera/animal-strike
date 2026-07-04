@@ -29,6 +29,26 @@ export class FirstPersonView {
     // base pose (the model's rest local transform within this.group)
     this.basePos = new THREE.Vector3(0.22, -0.22, -0.45);
     this.baseRot = new THREE.Euler(0, Math.PI, 0); // face -Z (camera forward)
+
+    // Dedicated viewmodel lighting: a small rig of lights parented to this.group
+    // (which syncs to the camera each frame) so the gun is ALWAYS lit from the
+    // front regardless of where the scene's sun is pointing. Without this, the
+    // gun goes dark whenever the player faces away from the sun — a common FPS
+    // problem solved by giving the viewmodel its own lights.
+    this.viewmodelLights = new THREE.Group();
+    // Key light: warm, in front-right-above the gun (matches the gun's base pose).
+    const key = new THREE.PointLight(0xfff0d0, 2.2, 3.0, 1.6);
+    key.position.set(0.15, 0.35, -0.55);
+    this.viewmodelLights.add(key);
+    // Fill light: cool, opposite side, softer — kills harsh shadows on the gun.
+    const fill = new THREE.PointLight(0xb0c8ff, 0.9, 3.0, 1.6);
+    fill.position.set(-0.25, 0.10, -0.55);
+    this.viewmodelLights.add(fill);
+    // Rim light: from behind-above to edge-light the gun silhouette.
+    const rim = new THREE.PointLight(0xffffff, 0.7, 3.0, 1.6);
+    rim.position.set(0.0, 0.40, -0.20);
+    this.viewmodelLights.add(rim);
+    this.group.add(this.viewmodelLights);
   }
 
   // Attach to the scene (not the camera — keeping the camera out of the scene

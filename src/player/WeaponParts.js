@@ -12,12 +12,12 @@ import { getSkin } from '../config/WeaponSkins.js';
 // params from the selected WeaponSkins entry. Because these mats are shared
 // references across every weapon part (FP + TP), one call restyles everything.
 export const mats = {
-  gunmetal: new THREE.MeshStandardMaterial({ color: 0x4a4f58, metalness: 0.6, roughness: 0.45 }),
-  polymer:  new THREE.MeshStandardMaterial({ color: 0x14161a, metalness: 0.0,  roughness: 0.78 }),
-  steel:    new THREE.MeshStandardMaterial({ color: 0x6a6e76, metalness: 0.7, roughness: 0.3 }),
+  gunmetal: new THREE.MeshStandardMaterial({ color: 0x4a4f58, metalness: 0.6, roughness: 0.45, envMapIntensity: 1.5 }),
+  polymer:  new THREE.MeshStandardMaterial({ color: 0x2a2e36, metalness: 0.0,  roughness: 0.78, envMapIntensity: 1.2 }),
+  steel:    new THREE.MeshStandardMaterial({ color: 0x6a6e76, metalness: 0.7, roughness: 0.3,  envMapIntensity: 1.5 }),
   accent:   new THREE.MeshStandardMaterial({ color: 0xffb84d, metalness: 0.2, roughness: 0.4, emissive: 0xff8800, emissiveIntensity: 0.4 }),
-  wood:     new THREE.MeshStandardMaterial({ color: 0x6b4226, metalness: 0.0, roughness: 0.8 }),
-  glass:    new THREE.MeshStandardMaterial({ color: 0x113355, metalness: 0.6, roughness: 0.15 }),
+  wood:     new THREE.MeshStandardMaterial({ color: 0x6b4226, metalness: 0.0, roughness: 0.8,  envMapIntensity: 1.2 }),
+  glass:    new THREE.MeshStandardMaterial({ color: 0x113355, metalness: 0.6, roughness: 0.15, envMapIntensity: 1.5 }),
 };
 
 // Apply the active weapon skin to the gunmetal + steel materials. Call on game
