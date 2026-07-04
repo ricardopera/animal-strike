@@ -1,10 +1,14 @@
 import * as THREE from 'three';
 import { MapDefinition } from '../MapDefinition.js';
+import { makeBuildHelper } from '../MapBuildHelper.js';
 
 // The original "Plaza" arena: green concrete ground, wood crates, twin corner
 // towers, an open central multi-level structure, sniper perches. Geometry is
-// the verbatim original ArenaBuilder body, refactored to the MapDefinition +
-// MapBuildHelper contract. 180°-rotational symmetry is preserved via placePair.
+// the verbatim original ArenaBuilder body. 180°-rotational symmetry via placePair.
+//
+// `authorGeometry` is authored ONCE and called in two modes:
+//   - client build():  place/placePair allocate textured THREE.Meshes
+//   - colliderBoxes:   place/placePair record world AABBs (server, headless)
 
 const COLORS = {
   ground: 0x6ab150,
@@ -21,7 +25,6 @@ const COLORS = {
   pad: 0x7a8088,
 };
 
-// Spawn points (moved here from SpawnPoints.js — authored for Plaza's geometry).
 const SPAWN_POINTS = [
   new THREE.Vector3(0, 1, 30), new THREE.Vector3(0, 1, -30),
   new THREE.Vector3(30, 1, 0), new THREE.Vector3(-30, 1, 0),
@@ -32,7 +35,6 @@ const SPAWN_POINTS = [
   new THREE.Vector3(0, 1, 15), new THREE.Vector3(0, 1, -15),
 ];
 
-// Waypoints (moved here from BotNavigation.js — authored for Plaza's geometry).
 const WAYPOINTS = [
   new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 20), new THREE.Vector3(0, 0, -20),
   new THREE.Vector3(20, 0, 0), new THREE.Vector3(-20, 0, 0),
@@ -42,27 +44,25 @@ const WAYPOINTS = [
   new THREE.Vector3(28, 3, -28), new THREE.Vector3(-28, 3, 28),
 ];
 
-function build(scene, colliders, helper) {
-  const group = new THREE.Group();
-  const place = (mesh) => { group.add(mesh); colliders.addFromMesh(mesh); };
-  const placePair = (w,h,d,color,x,y,z,texName,texOpts) =>
-    helper.placePair(place, w,h,d,color,x,y,z,texName,texOpts);
+// Author the geometry once. `place(meshOrBox)` and `placePair(...)` come from
+// the caller — either mesh-based (client build) or AABB-based (server colliderBoxes).
+function authorGeometry(place, placePair) {
+  const wallH = 8;
 
   // GROUND
-  place(helper.box(80, 1, 80, COLORS.ground, 0, -0.5, 0, 'concrete'));
+  place(80, 1, 80, COLORS.ground, 0, -0.5, 0, 'concrete');
 
   // PERIMETER WALLS (8m)
-  const wallH = 8;
-  place(helper.box(80, wallH, 1, COLORS.wall, 0, wallH/2, -40, 'concrete'));
-  place(helper.box(80, wallH, 1, COLORS.wall, 0, wallH/2, 40, 'concrete'));
-  place(helper.box(1, wallH, 80, COLORS.wall, -40, wallH/2, 0, 'concrete'));
-  place(helper.box(1, wallH, 80, COLORS.wall, 40, wallH/2, 0, 'concrete'));
+  place(80, wallH, 1, COLORS.wall, 0, wallH/2, -40, 'concrete');
+  place(80, wallH, 1, COLORS.wall, 0, wallH/2, 40, 'concrete');
+  place(1, wallH, 80, COLORS.wall, -40, wallH/2, 0, 'concrete');
+  place(1, wallH, 80, COLORS.wall, 40, wallH/2, 0, 'concrete');
 
   // TWIN TOWERS
-  buildTower(placePair, helper, -30, -30);
+  buildTower(placePair, -30, -30);
 
   // CENTRAL MULTI-LEVEL STRUCTURE
-  place(helper.box(12, 1, 12, COLORS.metal, 0, 2, 0, 'metal'));
+  place(12, 1, 12, COLORS.metal, 0, 2, 0, 'metal');
   placePair(1.5, 2.5, 1.5, COLORS.pillar, 5.5, 1.25, 5.5, 'concrete');
   placePair(1.5, 2.5, 1.5, COLORS.pillar, -5.5, 1.25, 5.5, 'concrete');
   placePair(1.6, 1.25, 4, COLORS.metalLight, 7.2, 0.625, 0, 'metal');
@@ -85,12 +85,27 @@ function build(scene, colliders, helper) {
   // LOW COVER PADS
   placePair(5, 0.8, 3, COLORS.pad, 12, 0.4, 6, 'metal');
   placePair(3, 0.8, 5, COLORS.pad, 6, 0.4, 12, 'metal');
+}
 
+function build(scene, colliders, helper) {
+  const group = new THREE.Group();
+  // place(w,h,d,color,x,y,z,texName?,texOpts?) makes the mesh + registers its AABB.
+  const place = (w,h,d,color,x,y,z,texName,texOpts) => {
+    const m = helper.box(w,h,d,color,x,y,z,texName,texOpts);
+    group.add(m); colliders.addFromMesh(m);
+  };
+  // placePair mirrors a box to (-x,y,-z) using raw-arg place (so the same
+  // authorGeometry works in both mesh and collider modes).
+  const placePair = (w,h,d,color,x,y,z,texName,texOpts) => {
+    place(w,h,d,color,x,y,z,texName,texOpts);
+    if (x !== 0 || z !== 0) place(w,h,d,color,-x,y,-z,texName,texOpts);
+  };
+  authorGeometry(place, placePair);
   scene.add(group);
   return group;
 }
 
-function buildTower(placePair, helper, cx, cz) {
+function buildTower(placePair, cx, cz) {
   const wallC = COLORS.towerWall, floorC = COLORS.towerFloor;
   const T = 0.6, S = 8, H = 7, half = S / 2, baseY = 0;
   placePair(S, H, T, wallC, cx, baseY + H/2, cz - half, 'concrete');
@@ -114,8 +129,14 @@ function buildPerch(placePair, cx, cz, metalColor) {
   placePair(S, 0.4, S, metalColor, cx, platY, cz, 'metal');
 }
 
-// Local shadeHex so per-map color math at module-eval time doesn't depend on the
-// runtime helper object (which is only available inside build()).
+// Compute colliderBoxes at module load via the collider-only pass (no meshes).
+const _colliderBoxes = [];
+{
+  const h = makeBuildHelper();
+  const { place, placePair } = h.colliderPass(_colliderBoxes);
+  authorGeometry(place, placePair);
+}
+
 function shadeHexLocal(h, amt) {
   const r = (h >> 16) & 255, g = (h >> 8) & 255, b = h & 255;
   const f = amt < 0 ? (1 + amt) : 1, a = amt < 0 ? 0 : amt;
@@ -137,4 +158,5 @@ export const PLAZA = new MapDefinition({
   build,
   spawnPoints: SPAWN_POINTS,
   waypoints: WAYPOINTS,
+  colliderBoxes: _colliderBoxes,
 });

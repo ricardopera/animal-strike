@@ -4,7 +4,7 @@ A fast, skill-based **browser FPS** in the spirit of [Krunker.io](https://krunke
 
 Pick an animal-headed gunner, pick a weapon, and frag your way to 25 kills before the bots do.
 
-![AnimalStrike](https://img.shields.io/badge/three.js-r0.185-black) ![tests](https://img.shields.io/badge/tests-110%20passing-brightgreen) ![status](https://img.shields.io/badge/status-playable-success)
+![AnimalStrike](https://img.shields.io/badge/three.js-r0.185-black) ![tests](https://img.shields.io/badge/tests-135%20passing-brightgreen) ![status](https://img.shields.io/badge/status-playable-success)
 
 ---
 
@@ -31,6 +31,7 @@ Pick an animal-headed gunner, pick a weapon, and frag your way to 25 kills befor
 - **Richer arena** — ~50 buildings with twin towers, a central structure, cover clusters, sniper perches, and **procedural textures** (concrete / metal / wood) applied throughout
 - **3 maps + rotation** — fight across **Plaza** (open central yard + twin towers), **Foundry** (industrial catwalks + forge pits), and **Dustbowl** (desert mesas + long sightlines). Pick a map in the menu or let **🔄 rotation** cycle them between matches. Each map is a self-contained `MapDefinition` (geometry + spawns + waypoints + palette), so the sky, fog, and mood shift per arena.
 - **Modern render pipeline** — **ACES filmic tone mapping** + sRGB output for cinematic color, **soft shadow maps** with a sun that follows the player, a **gradient sky** (zenith → warm horizon), **selective bloom** post-processing (FX glow: tracers, muzzle flash, sparks), additive-blended **glowing tracers** and **muzzle flash + dynamic point-light kick** per shot, PBR-tuned materials (metal surfaces are reflective, wood/concrete matte), and a warm/cool three-point light rig. Quality settings gate shadow/bloom tiers for performance.
+- **Multiplayer (peer-hosted)** — one player runs a small Node WebSocket server (`npm run host`) that owns the authoritative simulation; up to 5 friends join via the host's `ip:port`. Empty slots backfill with bots (6 total). Clients send inputs and render interpolated snapshots; the host's browser is just another client. See [Host a match](#-host-a-match-multiplayer).
 
 ---
 
@@ -57,6 +58,23 @@ Open the printed URL (default `http://localhost:5173`), click the canvas to lock
 | `Tab` | Scoreboard |
 
 > Tip: to wall-run, jump toward a wall and hold a movement key along it — then press `Space` to leap off.
+
+---
+
+## 🌐 Host a match (multiplayer)
+
+Peer-hosted: one player runs the authoritative server; up to 5 others join. Empty slots backfill with bots.
+
+**Host:**
+```bash
+npm install      # first time
+npm run host     # starts the WebSocket server on :8080 (override with PORT=...)
+```
+Then open the game, pick **Host** mode, choose your animal + weapon, press **START SERVER + PLAY**. Share your `ip:8080` with friends. (For internet play, port-forward 8080 to your machine.)
+
+**Join:** open the game, pick **Join**, enter the host's `ip:port`, press **CONNECT**, and wait for the host to start.
+
+Closing the host's **browser tab** doesn't end the match — only stopping the Node server does. See [`server/README.md`](server/README.md) for details.
 
 ---
 
@@ -107,12 +125,13 @@ The architecture deliberately leaves hooks open for later expansion:
 - ~~**More maps** — done (Plaza / Foundry / Dustbowl + rotation)~~
 - **Team deathmatch** — team fields on entities + team-aware targeting
 - **Gun-game** — per-player weapon progression on each kill
-- **Server-authoritative netcode** — the entity/AI split is structured so a network layer can drop in
+- ~~**Server-authoritative netcode** — done (peer-hosted: Node WebSocket server + authoritative `Sim` + snapshot/interpolation)~~
 
 Design spec: `docs/superpowers/specs/2026-07-02-animal-strike-design.md`
 v2 expansion spec: `docs/superpowers/specs/2026-07-03-animal-strike-v2-design.md`
 Per-animal voices spec: `docs/superpowers/specs/2026-07-04-per-animal-voices-design.md`
 Multi-map + rotation spec: `docs/superpowers/specs/2026-07-04-multi-map-rotation-design.md`
+Multiplayer spec: `docs/superpowers/specs/2026-07-04-multiplayer-design.md`
 Implementation plan: `docs/superpowers/plans/2026-07-02-animal-strike.md`
 
 ---

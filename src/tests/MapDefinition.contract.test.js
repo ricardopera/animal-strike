@@ -12,6 +12,7 @@ describe('MapDefinition', () => {
       build,
       spawnPoints: [{ x: 1 }, { x: 2 }],
       waypoints: [{ x: 1 }],
+      colliderBoxes: [{ min: [0,0,0], max: [1,1,1] }],
     });
     expect(md.id).toBe('test');
     expect(md.name).toBe('Test');
@@ -20,6 +21,7 @@ describe('MapDefinition', () => {
     expect(md.build).toBe(build);
     expect(md.spawnPoints).toHaveLength(2);
     expect(md.waypoints).toHaveLength(1);
+    expect(md.colliderBoxes).toHaveLength(1);
   });
 
   it('throws if required fields are missing', () => {
