@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { MapDefinition } from '../MapDefinition.js';
+import { makeBuildHelper } from '../MapBuildHelper.js';
 
 // Foundry — industrial arena: dark gunmetal surfaces, raised catwalk rings,
 // forge-pit courtyards (low-walled enclosures faking recessed areas, since the
@@ -38,56 +39,58 @@ const WAYPOINTS = [
   new THREE.Vector3(26, 4.2, -26), new THREE.Vector3(-26, 4.2, 26),
 ];
 
-function build(scene, colliders, helper) {
-  const group = new THREE.Group();
-  const place = (mesh) => { group.add(mesh); colliders.addFromMesh(mesh); };
-  const placePair = (w,h,d,color,x,y,z,texName,texOpts) =>
-    helper.placePair(place, w,h,d,color,x,y,z,texName,texOpts);
+// Author the geometry once. `place`/`placePair` come from the caller —
+// mesh-based (client build) or AABB-based (server colliderBoxes).
+function authorGeometry(place, placePair) {
+  const wallH = 8;
 
   // GROUND
-  place(helper.box(80, 1, 80, COLORS.ground, 0, -0.5, 0, 'concrete'));
+  place(80, 1, 80, COLORS.ground, 0, -0.5, 0, 'concrete');
 
   // PERIMETER WALLS (8m steel)
-  const wallH = 8;
-  place(helper.box(80, wallH, 1, COLORS.wall, 0, wallH/2, -40, 'metal'));
-  place(helper.box(80, wallH, 1, COLORS.wall, 0, wallH/2, 40, 'metal'));
-  place(helper.box(1, wallH, 80, COLORS.wall, -40, wallH/2, 0, 'metal'));
-  place(helper.box(1, wallH, 80, COLORS.wall, 40, wallH/2, 0, 'metal'));
+  place(80, wallH, 1, COLORS.wall, 0, wallH/2, -40, 'metal');
+  place(80, wallH, 1, COLORS.wall, 0, wallH/2, 40, 'metal');
+  place(1, wallH, 80, COLORS.wall, -40, wallH/2, 0, 'metal');
+  place(1, wallH, 80, COLORS.wall, 40, wallH/2, 0, 'metal');
 
-  // CENTRAL CATWALK RING (raised ~4.2m) — a square ring of platforms on pillars,
-  // reachable by ramps. The ring center is open for drops/risks.
-  // Ring is 4 long platforms forming a square around origin (inner edge ~9m).
-  placePair(14, 0.4, 2.5, COLORS.catwalk, 0, 4.2, 9, 'metal');      // front/back segments
-  placePair(2.5, 0.4, 14, COLORS.catwalk, 9, 4.2, 0, 'metal');      // left/right segments
-  // Pillars supporting the ring corners
+  // CENTRAL CATWALK RING (raised ~4.2m)
+  placePair(14, 0.4, 2.5, COLORS.catwalk, 0, 4.2, 9, 'metal');
+  placePair(2.5, 0.4, 14, COLORS.catwalk, 9, 4.2, 0, 'metal');
   placePair(1, 4.2, 1, COLORS.steelDark, 9, 2.1, 9, 'metal');
   placePair(1, 4.2, 1, COLORS.steelDark, 9, 2.1, -9, 'metal');
-  // Ramps up to the ring (stepped boxes)
   placePair(2.5, 0.6, 4, COLORS.steelLight, 0, 0.3, 16, 'metal');
   placePair(2.5, 1.2, 4, COLORS.steelLight, 0, 0.9, 13, 'metal');
   placePair(2.5, 1.8, 4, COLORS.steelLight, 0, 1.5, 11, 'metal');
   placePair(2.5, 2.4, 4, COLORS.steelLight, 0, 2.1, 9.5, 'metal');
 
-  // FORGE PITS — 2 sunken courtyards: a ring of low walls around a darker
-  // floor patch, reads as a recessed work pit / cover pocket. (Faked — no hole
-  // in the ground slab, per the AABB-only contract.)
+  // FORGE PITS
   buildForgePit(placePair, -22, 16);
   buildForgePit(placePair, 22, -16);
 
-  // MACHINERY BLOCKS — dense mid-cover (taller than crates, industrial look)
+  // MACHINERY BLOCKS
   placePair(4, 3, 3, COLORS.machinery, -16, 1.5, -6, 'metal');
   placePair(3, 2.5, 4, COLORS.machinery, 6, 1.25, -16, 'metal');
   placePair(2.5, 2, 2.5, COLORS.steel, 18, 1, 8, 'metal');
   placePair(3, 3.5, 2, COLORS.steel, -8, 1.75, 18, 'metal');
 
-  // VERTICAL PIPES / PILLARS — tall thin cover breaking sightlines
+  // VERTICAL PIPES / PILLARS
   placePair(1.2, 6, 1.2, COLORS.pipe, 12, 3, 12, 'metal');
   placePair(1.2, 6, 1.2, COLORS.pipe, 20, 3, 0, 'metal');
 
-  // LOW COVER PADS for crouch fights
+  // LOW COVER PADS
   placePair(5, 0.8, 3, COLORS.steelDark, 14, 0.4, 22, 'metal');
   placePair(3, 0.8, 5, COLORS.steelDark, 22, 0.4, 14, 'metal');
+}
 
+function build(scene, colliders, helper) {
+  const group = new THREE.Group();
+  const place = (w,h,d,color,x,y,z,texName,texOpts) => {
+    const m = helper.box(w,h,d,color,x,y,z,texName,texOpts);
+    group.add(m); colliders.addFromMesh(m);
+  };
+  const placePair = (w,h,d,color,x,y,z,texName,texOpts) =>
+    helper.placePair(place, w,h,d,color,x,y,z,texName,texOpts);
+  authorGeometry(place, placePair);
   scene.add(group);
   return group;
 }
@@ -104,6 +107,14 @@ function buildForgePit(placePair, cx, cz) {
   placePair(S - 1, 0.1, S - 1, COLORS.forge, cx, 0.05, cz, 'concrete');
 }
 
+// Compute colliderBoxes at module load via the collider-only pass (no meshes).
+const _colliderBoxes = [];
+{
+  const h = makeBuildHelper();
+  const { place, placePair } = h.colliderPass(_colliderBoxes);
+  authorGeometry(place, placePair);
+}
+
 export const FOUNDRY = new MapDefinition({
   id: 'foundry',
   name: 'Foundry',
@@ -116,4 +127,5 @@ export const FOUNDRY = new MapDefinition({
   build,
   spawnPoints: SPAWN_POINTS,
   waypoints: WAYPOINTS,
+  colliderBoxes: _colliderBoxes,
 });

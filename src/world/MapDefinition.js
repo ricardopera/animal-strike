@@ -3,7 +3,7 @@
 // Each map module (Plaza, Foundry, Dustbowl) exports one of these.
 export class MapDefinition {
   constructor(cfg) {
-    const required = ['id', 'name', 'desc', 'palette', 'build', 'spawnPoints', 'waypoints'];
+    const required = ['id', 'name', 'desc', 'palette', 'build', 'spawnPoints', 'waypoints', 'colliderBoxes'];
     for (const k of required) {
       if (cfg[k] === undefined || cfg[k] === null) {
         throw new Error(`MapDefinition missing required field: ${k}`);
@@ -12,12 +12,16 @@ export class MapDefinition {
     if (!Array.isArray(cfg.palette.sky) || cfg.palette.sky.length !== 4) {
       throw new Error('MapDefinition.palette.sky must be 4 gradient stops [zenith,mid,haze,horizon]');
     }
-    this.id          = cfg.id;
-    this.name        = cfg.name;
-    this.desc        = cfg.desc;
-    this.palette     = cfg.palette;
-    this.build       = cfg.build;
-    this.spawnPoints = cfg.spawnPoints;
-    this.waypoints   = cfg.waypoints;
+    if (!Array.isArray(cfg.colliderBoxes) || cfg.colliderBoxes.length === 0) {
+      throw new Error('MapDefinition.colliderBoxes must be a non-empty array of {min,max} AABBs');
+    }
+    this.id           = cfg.id;
+    this.name         = cfg.name;
+    this.desc         = cfg.desc;
+    this.palette      = cfg.palette;
+    this.build        = cfg.build;
+    this.spawnPoints  = cfg.spawnPoints;
+    this.waypoints    = cfg.waypoints;
+    this.colliderBoxes = cfg.colliderBoxes;
   }
 }
