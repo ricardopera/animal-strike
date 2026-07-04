@@ -4,7 +4,7 @@ A fast, skill-based **browser FPS** in the spirit of [Krunker.io](https://krunke
 
 Pick an animal-headed gunner, pick a weapon, and frag your way to 25 kills before the bots do.
 
-![AnimalStrike](https://img.shields.io/badge/three.js-r0.185-black) ![tests](https://img.shields.io/badge/tests-62%20passing-brightgreen) ![status](https://img.shields.io/badge/status-playable-success)
+![AnimalStrike](https://img.shields.io/badge/three.js-r0.185-black) ![tests](https://img.shields.io/badge/tests-69%20passing-brightgreen) ![status](https://img.shields.io/badge/status-playable-success)
 
 ---
 
@@ -26,7 +26,8 @@ Pick an animal-headed gunner, pick a weapon, and frag your way to 25 kills befor
 - **7 character classes** — Fox (Scout), Wolf (Soldier), Panda (Tank), Tiger (Striker), Bear (Juggernaut), Bunny (Speedster), Owl (Marksman) — each with distinct **speed / HP / jump / size** multipliers that now *actually* affect gameplay (a Bear has 135 HP and a big frame; a Bunny has 80 HP, jumps 1.35×, and is a tiny target). All heads and bodies wear **procedural fur textures** tinted to the palette.
 - **5 AI bots** — finite-state-machine brains (patrol → chase → engage → retreat), waypoint navigation, line-of-sight target selection, accuracy/reaction-time aim model — now each bot spawns with a **different weapon** (rotating loadouts) instead of all-AR.
 - **Full deathmatch loop** — 5-minute timer, 25-frag target, 2.5s respawns at the spawn farthest from enemies, killfeed (with headshot callouts), Tab scoreboard, VICTORY/DEFEATED end screen, play-again
-- **Polish** — synthesized WebAudio SFX **+ real generated music & voice** (MiniMax; synth fallback), dynamic crosshair, HP/ammo HUD with **bars, weapon icons, reload ring, hitmarker, killstreak counter**, sprint FOV kick, low-HP red vignette, and a settings panel (sensitivity / FOV / invert-Y / quality / music / voice) persisted to `localStorage`
+- **Per-animal character voices** — every animal speaks in its **own distinct voice** (Fox = eager scout, Wolf = steady soldier, Panda = deep tank, Tiger = fierce striker, Bear = bossy juggernaut, Bunny = cocky speedster, Owl = calm marksman). 42 generated voice clips via MiniMax text-to-audio: the killer taunts their kill, the victim cries out on hurt/death, the winner declares victory, respawns announce a return, and bots toss occasional taunts for ambience — all with synth fallback if files are missing. Plus a generated **music** loop (menu + combat) that crossfades on match phase.
+- **Polish** — synthesized WebAudio SFX, dynamic crosshair, HP/ammo HUD with **bars, weapon icons, reload ring, hitmarker, killstreak counter**, sprint FOV kick, low-HP red vignette, and a settings panel (sensitivity / FOV / invert-Y / quality / music / voice) persisted to `localStorage`
 - **Richer arena** — ~50 buildings with twin towers, a central structure, cover clusters, sniper perches, and **procedural textures** (concrete / metal / wood) applied throughout
 - **Modern render pipeline** — **ACES filmic tone mapping** + sRGB output for cinematic color, **soft shadow maps** with a sun that follows the player, a **gradient sky** (zenith → warm horizon), **selective bloom** post-processing (FX glow: tracers, muzzle flash, sparks), additive-blended **glowing tracers** and **muzzle flash + dynamic point-light kick** per shot, PBR-tuned materials (metal surfaces are reflective, wood/concrete matte), and a warm/cool three-point light rig. Quality settings gate shadow/bloom tiers for performance.
 
@@ -118,7 +119,7 @@ Implementation plan: `docs/superpowers/plans/2026-07-02-animal-strike.md`
 - [three.js](https://threejs.org/) r0.185 — WebGL rendering (incl. `EffectComposer` / `UnrealBloomPass` post-processing addons)
 - [Vite](https://vitejs.dev/) 8 — dev server + bundler
 - [Vitest](https://vitest.dev/) 4 — unit tests
-- [MiniMax](https://www.minimaxi.com/) — generated music & voice assets (`scripts/generate_assets.py`)
+- [MiniMax](https://www.minimaxi.com/) — generated music & voice assets (`scripts/generate_assets.py` for music + announcer; `scripts/generate_animal_voices.py` for per-animal voices)
 - Vanilla ES modules throughout — no framework
 
 ## License
