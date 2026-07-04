@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { ANIMALS } from '../config/Animals.js';
 import { MOVEMENT as M } from '../config/Movement.js';
 import { get as getTexture } from '../textures/TextureFactory.js';
+import { loadOrFallback } from '../textures/AssetLoader.js';
+import { buildWeapon } from './WeaponParts.js';
 
 function mat(color) { return new THREE.MeshStandardMaterial({ color, flatShading: true }); }
 
@@ -21,39 +23,13 @@ function shadeHex(h, amt) {
        | Math.max(0, Math.min(255, Math.round(b * f + 255 * a)));
 }
 
-// A small multi-part gun group for third-person bots: body + barrel + magazine.
-// Proportions vary by weaponId so a bot's loadout is recognizable at a glance.
+// Third-person bot gun: reuse the WeaponParts composer (same silhouette as the
+// first-person viewmodel) scaled to third-person proportions, so a bot's loadout
+// is recognizable at a glance. The shared factory means TP + FP guns never drift.
 function buildSimpleGun(weaponId = 'AR') {
-  const GUN = 0x222428, STEEL = 0x3a3e44, ACCENT = 0xffb84d;
-  const g = new THREE.Group();
-  const SIZES = {
-    AR:      { w: 0.12, h: 0.14, d: 0.60, barrel: 0.30, mag: 0.16 },
-    SNIPER:  { w: 0.10, h: 0.10, d: 0.95, barrel: 0.55, mag: 0.10 },
-    SMG:     { w: 0.10, h: 0.12, d: 0.42, barrel: 0.16, mag: 0.20 },
-    SHOTGUN: { w: 0.13, h: 0.15, d: 0.62, barrel: 0.30, mag: 0.0 },
-    PISTOL:  { w: 0.08, h: 0.10, d: 0.26, barrel: 0.08, mag: 0.12 },
-  };
-  const sz = SIZES[weaponId] || SIZES.AR;
-  // body
-  const body = new THREE.Mesh(new THREE.BoxGeometry(sz.w, sz.h, sz.d), mat(GUN));
-  g.add(body);
-  // barrel
-  if (sz.barrel > 0) {
-    const barrel = new THREE.Mesh(new THREE.BoxGeometry(sz.w * 0.5, sz.h * 0.5, sz.barrel), mat(STEEL));
-    barrel.position.set(0, sz.h * 0.1, sz.d * 0.5 + sz.barrel * 0.5);
-    g.add(barrel);
-  }
-  // magazine
-  if (sz.mag > 0) {
-    const mag = new THREE.Mesh(new THREE.BoxGeometry(sz.w * 0.7, sz.mag, sz.h * 0.6), mat(STEEL));
-    mag.position.set(0, -sz.h * 0.5 - sz.mag * 0.5, -sz.d * 0.1);
-    g.add(mag);
-  }
-  // accent sight dot
-  const sight = new THREE.Mesh(new THREE.SphereGeometry(sz.w * 0.18, 8, 6), mat(ACCENT));
-  sight.position.set(0, sz.h * 0.6, sz.d * 0.1);
-  g.add(sight);
-  return g;
+  const { group } = buildWeapon(weaponId);
+  group.scale.setScalar(0.85);
+  return group;
 }
 
 // Builds a humanoid body + attaches an animal head + a gun. Animates limb swing by speed.
