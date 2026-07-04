@@ -2,15 +2,21 @@ import * as THREE from 'three';
 import { ANIMALS } from '../config/Animals.js';
 import { MOVEMENT as M } from '../config/Movement.js';
 import { get as getTexture } from '../textures/TextureFactory.js';
+import { loadOrFallback } from '../textures/AssetLoader.js';
+import { buildWeapon } from './WeaponParts.js';
 
 function mat(color) { return new THREE.MeshStandardMaterial({ color, flatShading: true }); }
 
-// Fur-textured material tinted by a palette color (cached per color via TextureFactory).
-function furMat(color) {
+// Fur/skin material tinted by a palette color. Uses a procedural fur canvas as
+// the base/fallback; if `skinId` is given, the generated per-animal skin texture
+// is layered in (non-blocking) over the procedural fur when it loads.
+function furMat(color, skinId) {
   const tex = getTexture('fur', { base: color, accent: shadeHex(color, -0.25), seed: color }).clone();
   tex.needsUpdate = true;
   tex.repeat.set(2, 2);
-  return new THREE.MeshStandardMaterial({ map: tex, color: 0xffffff, flatShading: true });
+  const m = new THREE.MeshStandardMaterial({ map: tex, color: 0xffffff, flatShading: true });
+  if (skinId) loadOrFallback(`/textures/skins/${skinId}.png`, m);
+  return m;
 }
 
 function shadeHex(h, amt) {
@@ -21,39 +27,13 @@ function shadeHex(h, amt) {
        | Math.max(0, Math.min(255, Math.round(b * f + 255 * a)));
 }
 
-// A small multi-part gun group for third-person bots: body + barrel + magazine.
-// Proportions vary by weaponId so a bot's loadout is recognizable at a glance.
+// Third-person bot gun: reuse the WeaponParts composer (same silhouette as the
+// first-person viewmodel) scaled to third-person proportions, so a bot's loadout
+// is recognizable at a glance. The shared factory means TP + FP guns never drift.
 function buildSimpleGun(weaponId = 'AR') {
-  const GUN = 0x222428, STEEL = 0x3a3e44, ACCENT = 0xffb84d;
-  const g = new THREE.Group();
-  const SIZES = {
-    AR:      { w: 0.12, h: 0.14, d: 0.60, barrel: 0.30, mag: 0.16 },
-    SNIPER:  { w: 0.10, h: 0.10, d: 0.95, barrel: 0.55, mag: 0.10 },
-    SMG:     { w: 0.10, h: 0.12, d: 0.42, barrel: 0.16, mag: 0.20 },
-    SHOTGUN: { w: 0.13, h: 0.15, d: 0.62, barrel: 0.30, mag: 0.0 },
-    PISTOL:  { w: 0.08, h: 0.10, d: 0.26, barrel: 0.08, mag: 0.12 },
-  };
-  const sz = SIZES[weaponId] || SIZES.AR;
-  // body
-  const body = new THREE.Mesh(new THREE.BoxGeometry(sz.w, sz.h, sz.d), mat(GUN));
-  g.add(body);
-  // barrel
-  if (sz.barrel > 0) {
-    const barrel = new THREE.Mesh(new THREE.BoxGeometry(sz.w * 0.5, sz.h * 0.5, sz.barrel), mat(STEEL));
-    barrel.position.set(0, sz.h * 0.1, sz.d * 0.5 + sz.barrel * 0.5);
-    g.add(barrel);
-  }
-  // magazine
-  if (sz.mag > 0) {
-    const mag = new THREE.Mesh(new THREE.BoxGeometry(sz.w * 0.7, sz.mag, sz.h * 0.6), mat(STEEL));
-    mag.position.set(0, -sz.h * 0.5 - sz.mag * 0.5, -sz.d * 0.1);
-    g.add(mag);
-  }
-  // accent sight dot
-  const sight = new THREE.Mesh(new THREE.SphereGeometry(sz.w * 0.18, 8, 6), mat(ACCENT));
-  sight.position.set(0, sz.h * 0.6, sz.d * 0.1);
-  g.add(sight);
-  return g;
+  const { group } = buildWeapon(weaponId);
+  group.scale.setScalar(0.85);
+  return group;
 }
 
 // Builds a humanoid body + attaches an animal head + a gun. Animates limb swing by speed.
@@ -77,21 +57,21 @@ export class CharacterView {
     // sizeMul scales the whole rig so bigger animals read as bigger targets.
     const s = animal.sizeMul || 1;
 
-    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.28 * s, 0.7 * s, 6, 12), furMat(p.primary));
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.28 * s, 0.7 * s, 6, 12), furMat(p.primary, animal.skinTexture));
     torso.position.y = 1.1 * s;
     this.group.add(torso);
 
     // legs (fur-textured for consistency with the torso)
     const legGeo = new THREE.CapsuleGeometry(0.12 * s, 0.5 * s, 4, 8);
-    const legL = new THREE.Mesh(legGeo, furMat(p.primary)); legL.position.set(-0.13 * s, 0.45 * s, 0); this.group.add(legL);
-    const legR = new THREE.Mesh(legGeo, furMat(p.primary)); legR.position.set(0.13 * s, 0.45 * s, 0); this.group.add(legR);
+    const legL = new THREE.Mesh(legGeo, furMat(p.primary, animal.skinTexture)); legL.position.set(-0.13 * s, 0.45 * s, 0); this.group.add(legL);
+    const legR = new THREE.Mesh(legGeo, furMat(p.primary, animal.skinTexture)); legR.position.set(0.13 * s, 0.45 * s, 0); this.group.add(legR);
     this.limbs.push({ mesh: legL, baseX: -0.13 * s, baseZ: 0, phase: 0 });
     this.limbs.push({ mesh: legR, baseX: 0.13 * s, baseZ: 0, phase: Math.PI });
 
     // arms
     const armGeo = new THREE.CapsuleGeometry(0.1 * s, 0.45 * s, 4, 8);
-    const armL = new THREE.Mesh(armGeo, furMat(p.primary)); armL.position.set(-0.38 * s, 1.2 * s, 0); this.group.add(armL);
-    const armR = new THREE.Mesh(armGeo, furMat(p.primary)); armR.position.set(0.38 * s, 1.2 * s, 0); this.group.add(armR);
+    const armL = new THREE.Mesh(armGeo, furMat(p.primary, animal.skinTexture)); armL.position.set(-0.38 * s, 1.2 * s, 0); this.group.add(armL);
+    const armR = new THREE.Mesh(armGeo, furMat(p.primary, animal.skinTexture)); armR.position.set(0.38 * s, 1.2 * s, 0); this.group.add(armR);
     this.limbs.push({ mesh: armL, baseX: -0.38 * s, baseZ: 0, phase: Math.PI });
     this.limbs.push({ mesh: armR, baseX: 0.38 * s, baseZ: 0, phase: 0 });
 
@@ -101,7 +81,7 @@ export class CharacterView {
     this.head.traverse(o => {
       if (o.isMesh && o.userData.headshot && o.material) {
         // swap the flat head material for a fur-textured one tinted to primary
-        o.material = furMat(p.primary);
+        o.material = furMat(p.primary, animal.skinTexture);
       }
     });
     this.group.add(this.head);

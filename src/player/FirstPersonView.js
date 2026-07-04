@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { buildWeapon } from './WeaponParts.js';
 
 // First-person weapon viewmodel: a THREE.Group parented to the camera. Each
 // weapon has a distinct silhouette built from low-poly primitives. Animates:
@@ -8,24 +9,6 @@ import * as THREE from 'three';
 //
 // Materials use flat-shaded standard mats with darker gunmetal; textures can be
 // layered later via TextureFactory without changing this structure.
-
-function mat(color, opts = {}) {
-  return new THREE.MeshStandardMaterial({ color, flatShading: true, ...opts });
-}
-
-const GUNMETAL = 0x2b2f36;
-const POLYMER = 0x14161a;
-const ACCENT = 0xffb84d;
-
-// Per-weapon builder: returns { group, muzzleRef } where muzzleRef is an Object3D
-// at the barrel tip (local space, +Z forward). All weapons face -Z (camera forward).
-const BUILDERS = {
-  AR: buildAR,
-  SNIPER: buildSniper,
-  SMG: buildSMG,
-  SHOTGUN: buildShotgun,
-  PISTOL: buildPistol,
-};
 
 export class FirstPersonView {
   constructor() {
@@ -70,8 +53,7 @@ export class FirstPersonView {
   setWeapon(weaponId) {
     if (this.currentWeaponId === weaponId && this.model) return;
     this.clear();
-    const builder = BUILDERS[weaponId] || BUILDERS.AR;
-    const built = builder();
+    const built = buildWeapon(weaponId);
     this.model = built.group;
     this.model.position.copy(this.basePos);
     this.model.rotation.copy(this.baseRot);
@@ -168,69 +150,8 @@ export class FirstPersonView {
   }
 }
 
-/* ---------------- per-weapon builders ---------------- */
-// Convention: build the gun facing +Z in its own local space (so when rotated
-// by baseRot.y=PI it faces -Z = camera forward). Muzzle at +Z tip.
-// Each returns { group, muzzleLocal: Vector3 }.
+// Per-weapon geometry + muzzle positions now live in WeaponParts.js (shared with
+// the third-person bot gun). Each WeaponParts.buildWeapon(id) returns
+// { group, muzzleLocal } built from rounded primitives (cylinders, capsules,
+// toruses) — replacing the old all-box construction.
 
-function makeBody(w, h, d, color = GUNMETAL) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color));
-  return m;
-}
-
-function buildAR() {
-  const g = new THREE.Group();
-  const body = makeBody(0.07, 0.09, 0.32); body.position.set(0, 0, 0); g.add(body);
-  const barrel = makeBody(0.03, 0.03, 0.18, POLYMER); barrel.position.set(0, 0.015, 0.24); g.add(barrel);
-  const mag = makeBody(0.05, 0.12, 0.06, POLYMER); mag.position.set(0, -0.1, -0.02); mag.rotation.x = 0.15; g.add(mag);
-  const grip = makeBody(0.05, 0.1, 0.05, POLYMER); grip.position.set(0, -0.085, -0.12); grip.rotation.x = -0.25; g.add(grip);
-  const sight = makeBody(0.015, 0.03, 0.05, ACCENT); sight.position.set(0, 0.06, 0.05); g.add(sight);
-  const stock = makeBody(0.05, 0.07, 0.1, POLYMER); stock.position.set(0, -0.01, -0.2); g.add(stock);
-  return { group: g, muzzleLocal: new THREE.Vector3(0, 0.015, 0.33) };
-}
-
-function buildSniper() {
-  const g = new THREE.Group();
-  const body = makeBody(0.06, 0.08, 0.4); body.position.set(0, 0, 0); g.add(body);
-  const barrel = makeBody(0.025, 0.025, 0.3, POLYMER); barrel.position.set(0, 0.01, 0.32); g.add(barrel);
-  const scope = makeBody(0.04, 0.04, 0.14, POLYMER); scope.position.set(0, 0.08, 0.02); g.add(scope);
-  const scopeLens = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.005, 12), mat(0x113355, { metalness: 0.6, roughness: 0.2 }));
-  scopeLens.rotation.x = Math.PI / 2; scopeLens.position.set(0, 0.08, 0.09); g.add(scopeLens);
-  const mag = makeBody(0.04, 0.08, 0.06, POLYMER); mag.position.set(0, -0.08, -0.04); g.add(mag);
-  const grip = makeBody(0.04, 0.09, 0.04, POLYMER); grip.position.set(0, -0.075, -0.14); grip.rotation.x = -0.25; g.add(grip);
-  const stock = makeBody(0.05, 0.09, 0.14, POLYMER); stock.position.set(0, -0.02, -0.24); g.add(stock);
-  const bipodL = makeBody(0.01, 0.06, 0.01, POLYMER); bipodL.position.set(-0.03, -0.06, 0.3); bipodL.rotation.x = 0.4; g.add(bipodL);
-  const bipodR = makeBody(0.01, 0.06, 0.01, POLYMER); bipodR.position.set(0.03, -0.06, 0.3); bipodR.rotation.x = 0.4; g.add(bipodR);
-  return { group: g, muzzleLocal: new THREE.Vector3(0, 0.01, 0.47) };
-}
-
-function buildSMG() {
-  const g = new THREE.Group();
-  const body = makeBody(0.06, 0.08, 0.2); body.position.set(0, 0, 0); g.add(body);
-  const barrel = makeBody(0.025, 0.025, 0.08, POLYMER); barrel.position.set(0, 0.01, 0.13); g.add(barrel);
-  const mag = makeBody(0.04, 0.14, 0.05, POLYMER); mag.position.set(0, -0.11, 0.0); mag.rotation.x = 0.05; g.add(mag);
-  const grip = makeBody(0.04, 0.08, 0.04, POLYMER); grip.position.set(0, -0.07, -0.08); grip.rotation.x = -0.25; g.add(grip);
-  const sight = makeBody(0.01, 0.025, 0.04, ACCENT); sight.position.set(0, 0.055, 0.02); g.add(sight);
-  return { group: g, muzzleLocal: new THREE.Vector3(0, 0.01, 0.18) };
-}
-
-function buildShotgun() {
-  const g = new THREE.Group();
-  const body = makeBody(0.08, 0.09, 0.28); body.position.set(0, 0, 0); g.add(body);
-  const barrel = makeBody(0.05, 0.05, 0.22, POLYMER); barrel.position.set(0, 0.02, 0.24); g.add(barrel);
-  // double barrel hint
-  const tube = makeBody(0.045, 0.045, 0.2, GUNMETAL); tube.position.set(0, 0.02, 0.22); g.add(tube);
-  const pump = makeBody(0.06, 0.05, 0.08, POLYMER); pump.position.set(0, -0.05, 0.12); g.add(pump);
-  const grip = makeBody(0.05, 0.1, 0.05, POLYMER); grip.position.set(0, -0.09, -0.1); grip.rotation.x = -0.3; g.add(grip);
-  const stock = makeBody(0.06, 0.1, 0.14, POLYMER); stock.position.set(0, -0.03, -0.2); g.add(stock);
-  return { group: g, muzzleLocal: new THREE.Vector3(0, 0.02, 0.36) };
-}
-
-function buildPistol() {
-  const g = new THREE.Group();
-  const body = makeBody(0.05, 0.07, 0.16); body.position.set(0, 0.02, 0); g.add(body);
-  const barrel = makeBody(0.03, 0.03, 0.06, POLYMER); barrel.position.set(0, 0.03, 0.1); g.add(barrel);
-  const grip = makeBody(0.045, 0.12, 0.05, POLYMER); grip.position.set(0, -0.07, -0.05); grip.rotation.x = -0.2; g.add(grip);
-  const sight = makeBody(0.008, 0.02, 0.03, ACCENT); sight.position.set(0, 0.06, 0.04); g.add(sight);
-  return { group: g, muzzleLocal: new THREE.Vector3(0, 0.03, 0.14) };
-}
