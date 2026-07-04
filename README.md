@@ -4,7 +4,7 @@ A fast, skill-based **browser FPS** in the spirit of [Krunker.io](https://krunke
 
 Pick an animal-headed gunner, pick a weapon, and frag your way to 25 kills before the bots do.
 
-![AnimalStrike](https://img.shields.io/badge/three.js-r0.185-black) ![tests](https://img.shields.io/badge/tests-135%20passing-brightgreen) ![status](https://img.shields.io/badge/status-playable-success)
+![AnimalStrike](https://img.shields.io/badge/three.js-r0.185-black) ![tests](https://img.shields.io/badge/tests-140%20passing-brightgreen) ![status](https://img.shields.io/badge/status-playable-success)
 
 ---
 
@@ -32,6 +32,7 @@ Pick an animal-headed gunner, pick a weapon, and frag your way to 25 kills befor
 - **3 maps + rotation** — fight across **Plaza** (open central yard + twin towers), **Foundry** (industrial catwalks + forge pits), and **Dustbowl** (desert mesas + long sightlines). Pick a map in the menu or let **🔄 rotation** cycle them between matches. Each map is a self-contained `MapDefinition` (geometry + spawns + waypoints + palette), so the sky, fog, and mood shift per arena.
 - **Modern render pipeline** — **ACES filmic tone mapping** + sRGB output for cinematic color, **soft shadow maps** with a sun that follows the player, a **gradient sky** (zenith → warm horizon), **selective bloom** post-processing (FX glow: tracers, muzzle flash, sparks), additive-blended **glowing tracers** and **muzzle flash + dynamic point-light kick** per shot, PBR-tuned materials (metal surfaces are reflective, wood/concrete matte), and a warm/cool three-point light rig. Quality settings gate shadow/bloom tiers for performance.
 - **Multiplayer (peer-hosted)** — one player runs a small Node WebSocket server (`npm run host`) that owns the authoritative simulation; up to 5 friends join via the host's `ip:port`. Empty slots backfill with bots (6 total). Clients send inputs and render interpolated snapshots; the host's browser is just another client. See [Host a match](#-host-a-match-multiplayer).
+- **Rebuilt weapons + skins** — all 5 weapons reconstructed from **rounded primitives** (cylindrical barrels, scope tubes + rings, curved capsule grips, torus trigger guards, muzzle brakes, bipods) instead of boxes, sharing one `WeaponParts` factory between the first-person viewmodel and the third-person bot gun. **Generated PBR skin textures** (gunmetal / tactical camo / worn steel / wood) layer over the metal; each of the 7 animals now has its **own distinct generated fur/feather texture** (fox, wolf, panda, tiger, bear, bunny, owl) plus eye-shine catch-lights.
 
 ---
 
