@@ -12,10 +12,14 @@ export function getCached(path) {
   return e && e.loaded ? e.tex : null;
 }
 
-// load(path) → Promise<THREE.Texture|null>. Resolves null on error (never rejects),
-// so callers can treat a missing asset as "use fallback".
+// load(path) → Promise<THREE.Texture|null>. Resolves null on error or when there's
+// no DOM (e.g. node test env) — never rejects, so callers treat null as "use fallback".
 export function load(path) {
   if (_pending.has(path)) return _pending.get(path);
+  // No DOM (node/server/test) → can't load images; use fallback immediately.
+  if (typeof document === 'undefined') {
+    return Promise.resolve(null);
+  }
   const prom = new Promise((resolve) => {
     _loader.load(
       path,
