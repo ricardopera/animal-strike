@@ -7,12 +7,16 @@ import { buildWeapon } from './WeaponParts.js';
 
 function mat(color) { return new THREE.MeshStandardMaterial({ color, flatShading: true }); }
 
-// Fur-textured material tinted by a palette color (cached per color via TextureFactory).
-function furMat(color) {
+// Fur/skin material tinted by a palette color. Uses a procedural fur canvas as
+// the base/fallback; if `skinId` is given, the generated per-animal skin texture
+// is layered in (non-blocking) over the procedural fur when it loads.
+function furMat(color, skinId) {
   const tex = getTexture('fur', { base: color, accent: shadeHex(color, -0.25), seed: color }).clone();
   tex.needsUpdate = true;
   tex.repeat.set(2, 2);
-  return new THREE.MeshStandardMaterial({ map: tex, color: 0xffffff, flatShading: true });
+  const m = new THREE.MeshStandardMaterial({ map: tex, color: 0xffffff, flatShading: true });
+  if (skinId) loadOrFallback(`/textures/skins/${skinId}.png`, m);
+  return m;
 }
 
 function shadeHex(h, amt) {
@@ -53,21 +57,21 @@ export class CharacterView {
     // sizeMul scales the whole rig so bigger animals read as bigger targets.
     const s = animal.sizeMul || 1;
 
-    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.28 * s, 0.7 * s, 6, 12), furMat(p.primary));
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.28 * s, 0.7 * s, 6, 12), furMat(p.primary, animal.skinTexture));
     torso.position.y = 1.1 * s;
     this.group.add(torso);
 
     // legs (fur-textured for consistency with the torso)
     const legGeo = new THREE.CapsuleGeometry(0.12 * s, 0.5 * s, 4, 8);
-    const legL = new THREE.Mesh(legGeo, furMat(p.primary)); legL.position.set(-0.13 * s, 0.45 * s, 0); this.group.add(legL);
-    const legR = new THREE.Mesh(legGeo, furMat(p.primary)); legR.position.set(0.13 * s, 0.45 * s, 0); this.group.add(legR);
+    const legL = new THREE.Mesh(legGeo, furMat(p.primary, animal.skinTexture)); legL.position.set(-0.13 * s, 0.45 * s, 0); this.group.add(legL);
+    const legR = new THREE.Mesh(legGeo, furMat(p.primary, animal.skinTexture)); legR.position.set(0.13 * s, 0.45 * s, 0); this.group.add(legR);
     this.limbs.push({ mesh: legL, baseX: -0.13 * s, baseZ: 0, phase: 0 });
     this.limbs.push({ mesh: legR, baseX: 0.13 * s, baseZ: 0, phase: Math.PI });
 
     // arms
     const armGeo = new THREE.CapsuleGeometry(0.1 * s, 0.45 * s, 4, 8);
-    const armL = new THREE.Mesh(armGeo, furMat(p.primary)); armL.position.set(-0.38 * s, 1.2 * s, 0); this.group.add(armL);
-    const armR = new THREE.Mesh(armGeo, furMat(p.primary)); armR.position.set(0.38 * s, 1.2 * s, 0); this.group.add(armR);
+    const armL = new THREE.Mesh(armGeo, furMat(p.primary, animal.skinTexture)); armL.position.set(-0.38 * s, 1.2 * s, 0); this.group.add(armL);
+    const armR = new THREE.Mesh(armGeo, furMat(p.primary, animal.skinTexture)); armR.position.set(0.38 * s, 1.2 * s, 0); this.group.add(armR);
     this.limbs.push({ mesh: armL, baseX: -0.38 * s, baseZ: 0, phase: Math.PI });
     this.limbs.push({ mesh: armR, baseX: 0.38 * s, baseZ: 0, phase: 0 });
 
@@ -77,7 +81,7 @@ export class CharacterView {
     this.head.traverse(o => {
       if (o.isMesh && o.userData.headshot && o.material) {
         // swap the flat head material for a fur-textured one tinted to primary
-        o.material = furMat(p.primary);
+        o.material = furMat(p.primary, animal.skinTexture);
       }
     });
     this.group.add(this.head);
