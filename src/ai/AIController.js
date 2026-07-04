@@ -5,12 +5,11 @@ import { computeAimPoint, turnToward, selectTarget } from './BotAim.js';
 const STATES = { PATROL: 'PATROL', CHASE: 'CHASE', ENGAGE: 'ENGAGE', RETREAT: 'RETREAT' };
 
 export class AIController {
-  constructor(bot, difficulty) {
+  constructor(bot, difficulty, waypoints) {
     this.bot = bot;
     this.diff = difficulty;
     this.state = STATES.PATROL;
-    this.nav = new BotNavigation();
-    this.nav.pickRandomPatrolPoint();
+    this.nav = new BotNavigation(waypoints);  // waypoints come from the active map
     this.target = null;
     this.lastSeenTime = 0;
     this.reactionTimer = 0;
