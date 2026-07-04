@@ -13,11 +13,12 @@ export function getCached(path) {
 }
 
 // load(path) → Promise<THREE.Texture|null>. Resolves null on error or when there's
-// no DOM (e.g. node test env) — never rejects, so callers treat null as "use fallback".
+// no usable DOM (e.g. node test/server env) — never rejects, so callers treat null
+// as "use fallback".
 export function load(path) {
   if (_pending.has(path)) return _pending.get(path);
-  // No DOM (node/server/test) → can't load images; use fallback immediately.
-  if (typeof document === 'undefined') {
+  // No real DOM image loading (node/server/test) → can't load images; use fallback.
+  if (typeof document === 'undefined' || typeof document.createElementNS !== 'function') {
     return Promise.resolve(null);
   }
   const prom = new Promise((resolve) => {
