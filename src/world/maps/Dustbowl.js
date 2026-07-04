@@ -79,8 +79,10 @@ function build(scene, colliders, helper) {
     const m = helper.box(w,h,d,color,x,y,z,texName,texOpts);
     group.add(m); colliders.addFromMesh(m);
   };
-  const placePair = (w,h,d,color,x,y,z,texName,texOpts) =>
-    helper.placePair(place, w,h,d,color,x,y,z,texName,texOpts);
+  const placePair = (w,h,d,color,x,y,z,texName,texOpts) => {
+    place(w,h,d,color,x,y,z,texName,texOpts);
+    if (x !== 0 || z !== 0) place(w,h,d,color,-x,y,-z,texName,texOpts);
+  };
   authorGeometry(place, placePair);
   scene.add(group);
   return group;
