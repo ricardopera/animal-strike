@@ -18,6 +18,9 @@ export class ColliderStore {
     this.boxes.push(box);
     return box;
   }
+  clear() {
+    this.boxes.length = 0;
+  }
   // Resolve a vertical capsule (cylinder for collision purposes) position.
   // Returns { x, z, yBottom, onGround, hitCeiling } after pushing out along least-penetration axis.
   resolveCapsule(pos, radius, height) {

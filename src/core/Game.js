@@ -5,7 +5,8 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { FixedTimestep } from './FixedTimestep.js';
 import { InputState } from './InputState.js';
-import { ArenaBuilder } from '../world/ArenaBuilder.js';
+import { MAPS, getMapById } from '../world/Maps.js';
+import { makeBuildHelper } from '../world/MapBuildHelper.js';
 import { ColliderStore } from '../world/ColliderStore.js';
 import { createPlayer, eyePosition } from '../player/Player.js';
 import { tickMovement } from '../player/MovementController.js';
@@ -41,17 +42,19 @@ const _pelletDir = new THREE.Vector3();
 const _shotMuzzle2 = new THREE.Vector3();
 const _shotFar = new THREE.Vector3();
 
-// A vertical gradient sky texture (zenith → horizon) used as the scene
-// background. Cheaper than a skybox mesh and reads as real atmosphere.
-function makeSkyTexture() {
+// Build a vertical gradient sky texture from 4 stops [zenith, mid, haze, horizon].
+// Falls back to the original Plaza palette if stops are omitted (backward compat).
+function makeSkyTexture(stops) {
+  const s = stops && stops.length === 4 ? stops
+    : ['#5a8fcf', '#9cc4e8', '#d8ecf7', '#f0e8d8'];
   const c = document.createElement('canvas');
   c.width = 2; c.height = 256;
   const ctx = c.getContext('2d');
   const g = ctx.createLinearGradient(0, 0, 0, 256);
-  g.addColorStop(0, '#5a8fcf');    // zenith — deeper blue
-  g.addColorStop(0.5, '#9cc4e8');  // mid sky
-  g.addColorStop(0.82, '#d8ecf7'); // haze near horizon
-  g.addColorStop(1, '#f0e8d8');    // warm horizon glow
+  g.addColorStop(0, s[0]);    // zenith
+  g.addColorStop(0.5, s[1]);  // mid sky
+  g.addColorStop(0.82, s[2]); // haze near horizon
+  g.addColorStop(1, s[3]);    // warm horizon glow
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, 2, 256);
   const tex = new THREE.CanvasTexture(c);
@@ -109,10 +112,14 @@ export class Game {
     fill.position.set(-40, 40, -30);
     this.scene.add(fill);
 
-    // World
+    // World — map system. The active map owns geometry, spawns, waypoints, palette.
     this.colliders = new ColliderStore();
-    this.arena = new ArenaBuilder();
-    this.arena.build(this.scene, this.colliders);
+    this.buildHelper = makeBuildHelper();
+    this.arenaGroup = null;            // the THREE.Group returned by map.build (for teardown)
+    this.activeMap = MAPS[0];          // default map; MainMenu / rotation can change it
+    this.rotationIndex = 0;
+    this.rotateMaps = true;
+    this.loadMap(this.activeMap);
 
     // FX pools
     this.tracers = new BulletTracerPool(this.scene);
@@ -171,7 +178,10 @@ export class Game {
     this.input = new InputState(canvas);
     this.settings = new SettingsPanel(uiRoot, { onChange: (s) => this.applySettings(s) });
     this.menu = new MainMenu(uiRoot, {
-      onStart: ({ animal, weapon }) => this.startMatch(animal, weapon),
+      onStart: ({ animal, weapon, map, rotate }) => {
+        this.rotateMaps = rotate !== false;
+        this.startMatch(animal, weapon, map);
+      },
       onToggleSettings: () => this.settings.toggle(),
     });
     this.applySettings(this.settings.settings);
@@ -218,6 +228,29 @@ export class Game {
     if (this.composer) this.composer.setSize(window.innerWidth, window.innerHeight);
   }
 
+  // Tear down the current arena and build a new one from `map`. Sets the sky/fog
+  // palette and rebuilds the collider store. Called on init and on map switch.
+  loadMap(map) {
+    if (this.arenaGroup) {
+      this.scene.remove(this.arenaGroup);
+      // dispose geometries/materials to avoid GPU leaks across many matches
+      this.arenaGroup.traverse(o => {
+        if (o.isMesh) {
+          o.geometry.dispose();
+          if (o.material) {
+            if (Array.isArray(o.material)) o.material.forEach(m => m.dispose());
+            else o.material.dispose();
+          }
+        }
+      });
+    }
+    this.colliders.clear();
+    this.activeMap = map;
+    this.scene.background = makeSkyTexture(map.palette.sky);
+    this.scene.fog = new THREE.FogExp2(map.palette.fog, map.palette.fogDensity);
+    this.arenaGroup = map.build(this.scene, this.colliders, this.buildHelper);
+  }
+
   start() {
     this.running = true;
     this.lastTime = performance.now();
@@ -231,7 +264,10 @@ export class Game {
     requestAnimationFrame(loop);
   }
 
-  startMatch(animalId, weaponId) {
+  startMatch(animalId, weaponId, mapId) {
+    // Switch map if a different one was selected.
+    const map = getMapById(mapId) || this.activeMap;
+    if (map.id !== this.activeMap.id) this.loadMap(map);
     // Reset local player
     this.player.loadout.primary = weaponId;
     this.player.animalId = animalId;
@@ -263,7 +299,7 @@ export class Game {
     // different weapon, cycling through the roster for variety.
     const botWeaponIds = Object.keys(WEAPONS);
     for (let i = 0; i < MATCH.botCount; i++) {
-      const sp = getRandomSpawn(occupied);
+      const sp = getRandomSpawn(occupied, this.activeMap.spawnPoints);
       occupied.push(sp);
       const animal = ANIMAL_IDS[i % ANIMAL_IDS.length];
       const weaponId = botWeaponIds[i % botWeaponIds.length];
@@ -277,7 +313,7 @@ export class Game {
       bot.weapon = new WeaponController(WEAPONS[weaponId]);
       bot.pendingShots = [];
       bot.weapon.fireCallback = () => bot.pendingShots.push({});
-      bot.brain = new AIController(bot, diff);
+      bot.brain = new AIController(bot, diff, this.activeMap.waypoints);
       this.entities.add(bot);
       this.bots.push(bot);
     }
@@ -345,6 +381,12 @@ export class Game {
       this.entities.remove(bot);
     }
     this.bots = [];
+    // Advance map rotation so the next match (if rotation is on) lands on the
+    // next arena in the roster. The menu reflects the new selection.
+    if (this.rotateMaps) {
+      this.rotationIndex = (this.rotationIndex + 1) % MAPS.length;
+      this.menu.setSelectedMap(MAPS[this.rotationIndex].id);
+    }
     this.menu.show();
   }
 
@@ -364,7 +406,7 @@ export class Game {
 
   respawnPlayer(player) {
     const others = this.entities.alive().filter(p => p !== player).map(p => p.position);
-    const sp = getRandomSpawn(others);
+    const sp = getRandomSpawn(others, this.activeMap.spawnPoints);
     player.position.copy(sp);
     player.velocity.set(0, 0, 0);
     player.health = player.maxHealth;

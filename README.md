@@ -4,7 +4,7 @@ A fast, skill-based **browser FPS** in the spirit of [Krunker.io](https://krunke
 
 Pick an animal-headed gunner, pick a weapon, and frag your way to 25 kills before the bots do.
 
-![AnimalStrike](https://img.shields.io/badge/three.js-r0.185-black) ![tests](https://img.shields.io/badge/tests-69%20passing-brightgreen) ![status](https://img.shields.io/badge/status-playable-success)
+![AnimalStrike](https://img.shields.io/badge/three.js-r0.185-black) ![tests](https://img.shields.io/badge/tests-110%20passing-brightgreen) ![status](https://img.shields.io/badge/status-playable-success)
 
 ---
 
@@ -29,6 +29,7 @@ Pick an animal-headed gunner, pick a weapon, and frag your way to 25 kills befor
 - **Per-animal character voices** — every animal speaks in its **own distinct voice** (Fox = eager scout, Wolf = steady soldier, Panda = deep tank, Tiger = fierce striker, Bear = bossy juggernaut, Bunny = cocky speedster, Owl = calm marksman). 42 generated voice clips via MiniMax text-to-audio: the killer taunts their kill, the victim cries out on hurt/death, the winner declares victory, respawns announce a return, and bots toss occasional taunts for ambience — all with synth fallback if files are missing. Plus a generated **music** loop (menu + combat) that crossfades on match phase.
 - **Polish** — synthesized WebAudio SFX, dynamic crosshair, HP/ammo HUD with **bars, weapon icons, reload ring, hitmarker, killstreak counter**, sprint FOV kick, low-HP red vignette, and a settings panel (sensitivity / FOV / invert-Y / quality / music / voice) persisted to `localStorage`
 - **Richer arena** — ~50 buildings with twin towers, a central structure, cover clusters, sniper perches, and **procedural textures** (concrete / metal / wood) applied throughout
+- **3 maps + rotation** — fight across **Plaza** (open central yard + twin towers), **Foundry** (industrial catwalks + forge pits), and **Dustbowl** (desert mesas + long sightlines). Pick a map in the menu or let **🔄 rotation** cycle them between matches. Each map is a self-contained `MapDefinition` (geometry + spawns + waypoints + palette), so the sky, fog, and mood shift per arena.
 - **Modern render pipeline** — **ACES filmic tone mapping** + sRGB output for cinematic color, **soft shadow maps** with a sun that follows the player, a **gradient sky** (zenith → warm horizon), **selective bloom** post-processing (FX glow: tracers, muzzle flash, sparks), additive-blended **glowing tracers** and **muzzle flash + dynamic point-light kick** per shot, PBR-tuned materials (metal surfaces are reflective, wood/concrete matte), and a warm/cool three-point light rig. Quality settings gate shadow/bloom tiers for performance.
 
 ---
@@ -103,13 +104,15 @@ npm run preview    # preview the production build
 
 The architecture deliberately leaves hooks open for later expansion:
 - **Character classes** — promote the animal stat multipliers into active abilities
-- **More maps** — each arena is its own `ArenaBuilder` + waypoint graph
+- ~~**More maps** — done (Plaza / Foundry / Dustbowl + rotation)~~
 - **Team deathmatch** — team fields on entities + team-aware targeting
 - **Gun-game** — per-player weapon progression on each kill
 - **Server-authoritative netcode** — the entity/AI split is structured so a network layer can drop in
 
 Design spec: `docs/superpowers/specs/2026-07-02-animal-strike-design.md`
 v2 expansion spec: `docs/superpowers/specs/2026-07-03-animal-strike-v2-design.md`
+Per-animal voices spec: `docs/superpowers/specs/2026-07-04-per-animal-voices-design.md`
+Multi-map + rotation spec: `docs/superpowers/specs/2026-07-04-multi-map-rotation-design.md`
 Implementation plan: `docs/superpowers/plans/2026-07-02-animal-strike.md`
 
 ---

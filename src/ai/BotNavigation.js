@@ -1,30 +1,19 @@
 import * as THREE from 'three';
 
-// Hand-placed waypoint graph over the arena. Each node is a position; edges are
-// implied by "go to nearest node toward goal" (greedy, no full A* for MVP).
-export const WAYPOINTS = [
-  new THREE.Vector3(0, 0, 0),
-  new THREE.Vector3(0, 0, 20),
-  new THREE.Vector3(0, 0, -20),
-  new THREE.Vector3(20, 0, 0),
-  new THREE.Vector3(-20, 0, 0),
-  new THREE.Vector3(14, 0, 14),
-  new THREE.Vector3(-14, 0, -14),
-  new THREE.Vector3(14, 0, -14),
-  new THREE.Vector3(-14, 0, 14),
-  new THREE.Vector3(0, 3, 0),
-  new THREE.Vector3(28, 3, -28),
-  new THREE.Vector3(-28, 3, 28),
-];
-
+// Waypoint navigation over a given waypoint graph (the active map's waypoints).
+// Each node is a position; edges are implied by "go to nearest node toward goal"
+// (greedy, no full A* for MVP). The waypoint set is passed in by the caller
+// (Game.js), sourced from the active MapDefinition — NOT a module global.
 export class BotNavigation {
-  constructor() {
+  constructor(waypoints) {
+    this.waypoints = waypoints && waypoints.length ? waypoints : [new THREE.Vector3(0, 0, 0)];
     this.target = null;
     this.stuckTimer = 0;
     this.lastPos = new THREE.Vector3();
+    this.pickRandomPatrolPoint();
   }
   pickRandomPatrolPoint() {
-    this.target = WAYPOINTS[Math.floor(Math.random() * WAYPOINTS.length)].clone();
+    this.target = this.waypoints[Math.floor(Math.random() * this.waypoints.length)].clone();
   }
   setChaseTarget(point) {
     this.target = point.clone();
