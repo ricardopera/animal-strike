@@ -31,6 +31,8 @@ import { ANIMAL_IDS, ANIMALS } from '../config/Animals.js';
 import { Sfx, resumeAudio } from '../audio/Audio.js';
 import { MusicPlayer } from '../audio/MusicPlayer.js';
 import { VoicePlayer } from '../audio/VoicePlayer.js';
+import { NetClient } from '../net/NetClient.js';
+import { RemoteView } from '../net/RemoteView.js';
 import { SettingsPanel } from '../ui/Settings.js';
 import { DamageNumbers } from '../fx/DamageNumbers.js';
 
@@ -178,9 +180,13 @@ export class Game {
     this.input = new InputState(canvas);
     this.settings = new SettingsPanel(uiRoot, { onChange: (s) => this.applySettings(s) });
     this.menu = new MainMenu(uiRoot, {
-      onStart: ({ animal, weapon, map, rotate }) => {
+      onStart: ({ mode, animal, weapon, map, rotate, address }) => {
         this.rotateMaps = rotate !== false;
-        this.startMatch(animal, weapon, map);
+        if (mode === 'host' || mode === 'join') {
+          this.startMultiplayer(mode, address, animal, weapon, map);
+        } else {
+          this.startMatch(animal, weapon, map);
+        }
       },
       onToggleSettings: () => this.settings.toggle(),
     });
@@ -371,11 +377,101 @@ export class Game {
     }
   }
 
+  // ---- Multiplayer (host / join) ----
+  // Additive path: Game keeps its single-player inline sim untouched. In MP the
+  // local player uses naive prediction (local movement for responsiveness); remote
+  // players + bots render purely from server snapshots via RemoteView interpolation.
+  async startMultiplayer(mode, address, animalId, weaponId, mapId) {
+    this.mpMode = mode;
+    this.mpAnimal = animalId;
+    this.mpWeapon = weaponId;
+    this.mpMap = mapId;
+    // Teardown any existing MP state.
+    this.cleanupMultiplayer();
+
+    const url = mode === 'host'
+      ? `ws://localhost:8080`
+      : `ws://${address}`;
+    this.netClient = new NetClient();
+    this.netClient.onWelcome = (m) => {
+      this.mpLocalId = m.you;
+      this.hud.setWeapon(WEAPONS[weaponId].name);
+      this.hud.setWeaponIcon(weaponId);
+      this.firstPersonView.setWeapon(weaponId);
+      // If host, immediately start the match.
+      if (m.isHost) {
+        this.netClient.start(mapId, MATCH.fragTarget, MATCH.matchSeconds);
+      }
+    };
+    this.netClient.onMatchStart = (m) => {
+      // Switch the arena + sky/fog to the host's chosen map.
+      const map = getMapById(m.map) || this.activeMap;
+      if (map.id !== this.activeMap.id) this.loadMap(map);
+      this.match = { active: true, timeLeft: m.seconds, fragTarget: m.fragTarget, over: false };
+      resumeAudio();
+      this.music.play('combat');
+      this.firstPersonView.endReload();
+      // Build a local predicted player for our own movement/aim.
+      this.player = createPlayer({ id: this.mpLocalId, isLocal: true, position: new THREE.Vector3(0, 1, 15), animalId });
+      this.applyAnimalStats(this.player, animalId);
+      this.player.view = new CharacterView(this.scene);
+      this.player.view.setAnimal(animalId);
+      this.player.view.setWeapon(weaponId);
+      this.player.view.setVisible(false);
+      this.weapon = new WeaponController(WEAPONS[weaponId]);
+      this.input.requestPointerLock();
+      this.remoteView = new RemoteView(this.scene);
+      this.mpActive = true;
+    };
+    this.netClient.onSnapshot = (snap) => {
+      if (this.remoteView) this.remoteView.pushSnapshot(snap);
+      // Reconcile local predicted position toward the authoritative value (~80ms lerp).
+      const me = snap.players.find(p => p.id === this.mpLocalId);
+      if (me && this.player) {
+        this.player.health = me.hp;
+        // gentle pull toward server position to correct drift
+        this.player.position.x += (me.x - this.player.position.x) * 0.15;
+        this.player.position.y += (me.y - this.player.position.y) * 0.15;
+        this.player.position.z += (me.z - this.player.position.z) * 0.15;
+        this.player.alive = me.alive;
+        this.hud.setAmmo(me.ammo, this.weapon.def.mag);
+      }
+      this.match.timeLeft = snap.timeLeft;
+    };
+    this.netClient.onMatchEnd = (ranked) => {
+      this.match.active = false; this.match.over = true;
+      if (document.pointerLockElement) document.exitPointerLock();
+      this.music.play('menu');
+      this.endScreen.show(ranked.map(r => ({ ...r, isLocal: r.id === this.mpLocalId })));
+    };
+    this.netClient.onDisconnect = () => {
+      this.hud.addKill('Disconnected from host.');
+      this.returnToMenu();
+    };
+    this.menu.hide();
+    try {
+      await this.netClient.connect(url);
+      this.netClient.hello('You', animalId, weaponId);
+    } catch (e) {
+      this.hud.addKill('Could not connect to ' + url);
+      this.menu.show();
+    }
+  }
+
+  cleanupMultiplayer() {
+    if (this.remoteView) { this.remoteView.dispose(); this.remoteView = null; }
+    if (this.netClient) { this.netClient.close(); this.netClient = null; }
+    this.mpActive = false;
+  }
+
   returnToMenu() {
     this.match.active = false;
     this.match.over = true;
+    this.mpActive = false;
     if (document.pointerLockElement) document.exitPointerLock();
     this.music.play('menu');
+    // Teardown multiplayer state if active.
+    this.cleanupMultiplayer();
     for (const bot of this.bots) {
       if (bot.view) bot.view.dispose();
       this.entities.remove(bot);
@@ -428,7 +524,88 @@ export class Game {
     this.voice.playAnimal(player.animalId, 'spawn');
   }
 
+  frameMultiplayer(realDt) {
+    if (!this.netClient || !this.player) return;
+    // Look
+    if (this.match.active) {
+      const look = this.input.consumeLook();
+      this.player.yaw -= look.dx;
+      this.player.pitch -= look.dy;
+      this.player.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.player.pitch));
+    }
+    this.player.intent = this.input.buildIntent();
+
+    // Send input to host (absolute yaw/pitch + movement intent).
+    if (this.match.active && this.player.alive) {
+      this.netClient.sendInput({
+        forward: this.player.intent.forward, strafe: this.player.intent.strafe,
+        jump: this.player.intent.jump, sprint: this.player.intent.sprint,
+        crouch: this.player.intent.crouch, firing: this.player.intent.firing,
+        reloadRequested: this.input.consumeReloadRequest(),
+        yaw: this.player.yaw, pitch: this.player.pitch,
+      });
+    }
+
+    // Naive prediction: run local movement for responsiveness.
+    if (this.match.active && this.player.alive) {
+      this.fixed.update(realDt, (dt) => tickMovement(this.player, dt, this.colliders));
+    }
+
+    // Render remote players from interpolated snapshots.
+    if (this.remoteView) {
+      this.remoteView.update(this.mpLocalId, realDt);
+      for (const ev of this.remoteView.drainEvents()) {
+        if (ev.k === 'shot') {
+          this.tracers.spawn(new THREE.Vector3(ev.ox, ev.oy, ev.oz), new THREE.Vector3(ev.dx, ev.dy, ev.dz));
+          this.flashes.spawn(new THREE.Vector3(ev.ox + ev.dx * 0.6, ev.oy + ev.dy * 0.6, ev.oz + ev.dz * 0.6));
+        } else if (ev.k === 'hit' && ev.shooter === this.mpLocalId) {
+          this.hud.showHitmarker(false);
+        } else if (ev.k === 'kill') {
+          const s = (this.remoteView.snapshots.at(-1)?.players || []).find(p => p.id === ev.shooter);
+          const v = (this.remoteView.snapshots.at(-1)?.players || []).find(p => p.id === ev.victim);
+          this.hud.addKill(`${s ? s.name : '?'} ${ev.hs ? 'headshotted' : 'fragged'} ${v ? v.name : '?'}`);
+          Sfx.kill();
+        }
+      }
+    }
+
+    // FX + camera + HUD (mirrors single-player rendering tail).
+    this.tracers.update(realDt);
+    this.flashes.update(realDt);
+    this.sparks.update(realDt);
+    this.damageNumbers.update(realDt);
+    const eye = eyePosition(this.player);
+    this.camera.position.copy(eye);
+    this.camera.rotation.set(0, 0, 0);
+    this.camera.rotation.order = 'YXZ';
+    this.camera.rotation.y = this.player.yaw;
+    this.camera.rotation.x = this.player.pitch;
+    this.camera.updateMatrixWorld();
+    if (this.sun) {
+      this.sun.position.set(eye.x + 40, 80, eye.z + 30);
+      this.sun.target.position.set(eye.x, eye.y, eye.z);
+      this.sun.target.updateMatrixWorld();
+    }
+    const showFP = this.match.active && this.player.alive;
+    this.firstPersonView.setVisible(showFP);
+    if (showFP) {
+      this.firstPersonView.syncToCamera(this.camera);
+      this.firstPersonView.update(realDt, Math.hypot(this.player.velocity.x, this.player.velocity.z));
+    }
+    if (this.bloomEnabled && this.composer) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
+
+    this.hud.setHealth(this.player.health);
+    this.hud.setTime(Math.ceil(this.match.timeLeft));
+    const speed = Math.hypot(this.player.velocity.x, this.player.velocity.z);
+    this.crosshair.setSpread(14 + speed * 2);
+    this.scoreboard.update(this.remoteView ? (this.remoteView.snapshots.at(-1)?.players || []).map(p => ({ id: p.id, name: p.name, animalId: p.animal, score: p.score, deaths: 0, isLocal: p.id === this.mpLocalId, alive: p.alive })) : []);
+  }
+
   frame(realDt) {
+    // Multiplayer path: send input + render from server snapshots. Keeps the
+    // single-player inline sim path below fully untouched.
+    if (this.mpActive) { this.frameMultiplayer(realDt); return; }
     // Look (local player only, only while match active)
     if (this.match.active) {
       const look = this.input.consumeLook();
