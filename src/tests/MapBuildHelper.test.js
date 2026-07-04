@@ -47,3 +47,24 @@ describe('MapBuildHelper', () => {
     expect(placed).toEqual([[0, 0], [5, 7], [-5, -7]]);
   });
 });
+
+describe('MapBuildHelper colliderPass', () => {
+  it('produces AABB arrays instead of meshes', () => {
+    const h = makeBuildHelper();
+    const boxes = [];
+    const { place, placePair } = h.colliderPass(boxes);
+    // origin-symmetric piece -> 1 box
+    place(2, 2, 2, 0xff0000, 0, 1, 0);
+    // off-origin piece -> 2 boxes (mirror)
+    placePair(2, 2, 2, 0xff0000, 5, 1, 7);
+    expect(boxes).toHaveLength(3);
+    // AABB shape: { min:[x,y,z], max:[x,y,z] }, min < max
+    const b = boxes[1];
+    expect(b.min[0]).toBeLessThan(b.max[0]);
+    expect(b.min[1]).toBeLessThan(b.max[1]);
+    // box at (5,1,7) size 2: min=(4,0,6), max=(6,2,8)
+    expect(boxes[1]).toEqual({ min: [4, 0, 6], max: [6, 2, 8] });
+    // mirror at (-5,1,-7): min=(-6,0,-8), max=(-4,2,-6)
+    expect(boxes[2]).toEqual({ min: [-6, 0, -8], max: [-4, 2, -6] });
+  });
+});

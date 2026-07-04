@@ -10,7 +10,22 @@ import { get as getTexture } from '../textures/TextureFactory.js';
 //   helper.placePair(place, w,h,d,color,x,y,z,'wood');
 
 export function makeBuildHelper() {
-  return { box, placePair, shadeHex };
+  return { box, placePair, shadeHex, colliderPass };
+}
+
+// A collider-only build mode: same box()/placePair() geometry authoring, but
+// records each box's world AABB into the `out` array instead of allocating
+// THREE meshes/textures. The server uses this to build a ColliderStore headlessly.
+// Returns { place, placePair } bound to the out array.
+function colliderPass(out) {
+  const cbox = (w, h, d, color, x, y, z) => {
+    out.push({ min: [x - w / 2, y - h / 2, z - d / 2], max: [x + w / 2, y + h / 2, z + d / 2] });
+  };
+  const placePairC = (w, h, d, color, x, y, z) => {
+    cbox(w, h, d, color, x, y, z);
+    if (x !== 0 || z !== 0) cbox(w, h, d, color, -x, y, -z);
+  };
+  return { place: cbox, placePair: placePairC };
 }
 
 // Textured PBR box. Metal surfaces get high metalness + low roughness; others
