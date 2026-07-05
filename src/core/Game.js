@@ -332,6 +332,7 @@ export class Game {
   }
 
   startMatch(animalId, weaponId, mapId) {
+    this.paused = false;
     // Switch map if a different one was selected.
     const map = getMapById(mapId) || this.activeMap;
     if (map.id !== this.activeMap.id) this.loadMap(map);
@@ -443,6 +444,7 @@ export class Game {
   // local player uses naive prediction (local movement for responsiveness); remote
   // players + bots render purely from server snapshots via RemoteView interpolation.
   async startMultiplayer(mode, address, animalId, weaponId, mapId) {
+    this.paused = false;
     this.mpMode = mode;
     this.mpAnimal = animalId;
     this.mpWeapon = weaponId;
@@ -526,6 +528,7 @@ export class Game {
   }
 
   returnToMenu() {
+    this.paused = false;
     this.match.active = false;
     this.match.over = true;
     this.mpActive = false;
