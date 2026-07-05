@@ -2,6 +2,7 @@
 // a synthesized WebAudio blip if a file is missing. Has per-clip cooldowns.
 // Supports both shared announcer clips AND per-animal character voices.
 import { resumeAudio } from './Audio.js';
+import { asset } from '../config/paths.js';
 
 let ctx = null;
 function ensure() {
@@ -11,16 +12,16 @@ function ensure() {
 
 // Shared announcer/match clips (keep from v2).
 const CLIPS = {
-  matchStart: '/audio/voice/match_start.mp3',
-  lowTime: '/audio/voice/low_time.mp3',
-  victory: '/audio/voice/victory.mp3',
-  defeat: '/audio/voice/defeat.mp3',
-  fragMilestone: '/audio/voice/frag_milestone.mp3',
+  matchStart: asset('/audio/voice/match_start.mp3'),
+  lowTime: asset('/audio/voice/low_time.mp3'),
+  victory: asset('/audio/voice/victory.mp3'),
+  defeat: asset('/audio/voice/defeat.mp3'),
+  fragMilestone: asset('/audio/voice/frag_milestone.mp3'),
   // Legacy shared grunts (still used as a last-resort fallback identifier)
-  gruntKill: '/audio/voice/grunt_kill.mp3',
-  gruntHurt: '/audio/voice/grunt_hurt.mp3',
-  gruntDeath: '/audio/voice/grunt_death.mp3',
-  gruntSpawn: '/audio/voice/grunt_spawn.mp3',
+  gruntKill: asset('/audio/voice/grunt_kill.mp3'),
+  gruntHurt: asset('/audio/voice/grunt_hurt.mp3'),
+  gruntDeath: asset('/audio/voice/grunt_death.mp3'),
+  gruntSpawn: asset('/audio/voice/grunt_spawn.mp3'),
 };
 
 const ANIMAL_IDS = ['FOX', 'WOLF', 'PANDA', 'TIGER', 'BEAR', 'BUNNY', 'OWL'];
@@ -29,7 +30,7 @@ const SITUATIONS = ['kill', 'hurt', 'death', 'spawn', 'victory', 'taunt'];
 // Build per-animal clip map: key "FOX_kill" -> "/audio/voice/FOX_kill.mp3"
 const ANIMAL_CLIPS = {};
 for (const a of ANIMAL_IDS) for (const s of SITUATIONS) {
-  ANIMAL_CLIPS[`${a}_${s}`] = `/audio/voice/${a}_${s}.mp3`;
+  ANIMAL_CLIPS[`${a}_${s}`] = asset(`/audio/voice/${a}_${s}.mp3`);
 }
 
 // Per-line cooldown (seconds). Per-animal keys fall back to the situation default.
