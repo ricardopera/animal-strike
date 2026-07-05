@@ -221,6 +221,8 @@ export class Game {
     // player was stranded with no menu and no way to re-acquire aim.)
     window.addEventListener('keydown', (e) => {
       if (e.code !== 'Escape') return;
+      // If settings is open (from the pause menu), Esc closes settings rather than toggling pause.
+      if (this.settings.el.style.display !== 'none') { this.settings.toggle(); return; }
       // Only pause during an active, in-progress match — never on the main menu
       // (where Esc would be meaningless) or the end screen.
       const onMainMenu = this.menu.el.style.display === 'flex' || this.menu.el.style.display === '';
@@ -233,6 +235,17 @@ export class Game {
       } else {
         this.pauseMenu.hide();
         this.input.requestPointerLock();
+      }
+    });
+
+    // Browsers suppress the Escape keydown while pointer-locked, so we detect
+    // "user wants to pause" via the pointer-lock loss that Esc (or tab-switch)
+    // triggers. When lock drops mid-match, open the pause menu.
+    document.addEventListener('pointerlockchange', () => {
+      if (document.pointerLockElement) return;            // lock (re-)acquired — nothing to do
+      if (this.match.active && !this.match.over && !this.paused) {
+        this.paused = true;
+        this.pauseMenu.show();
       }
     });
 
@@ -502,6 +515,8 @@ export class Game {
       this.match.timeLeft = snap.timeLeft;
     };
     this.netClient.onMatchEnd = (ranked) => {
+      this.pauseMenu.hide();
+      this.paused = false;
       this.match.active = false; this.match.over = true;
       if (document.pointerLockElement) document.exitPointerLock();
       this.music.play('menu');
@@ -529,6 +544,7 @@ export class Game {
 
   returnToMenu() {
     this.paused = false;
+    this.pauseMenu.hide();
     this.match.active = false;
     this.match.over = true;
     this.mpActive = false;
@@ -552,6 +568,8 @@ export class Game {
 
   endMatch() {
     if (this.match.over) return;
+    this.pauseMenu.hide();
+    this.paused = false;
     this.match.over = true;
     this.match.active = false;
     if (document.pointerLockElement) document.exitPointerLock();
