@@ -3,6 +3,7 @@ import { ANIMALS } from '../config/Animals.js';
 import { MOVEMENT as M } from '../config/Movement.js';
 import { get as getTexture } from '../textures/TextureFactory.js';
 import { loadOrFallback } from '../textures/AssetLoader.js';
+import { asset } from '../config/paths.js';
 import { buildWeapon } from './WeaponParts.js';
 
 function mat(color) { return new THREE.MeshStandardMaterial({ color, flatShading: true }); }
@@ -15,7 +16,7 @@ function furMat(color, skinId) {
   tex.needsUpdate = true;
   tex.repeat.set(2, 2);
   const m = new THREE.MeshStandardMaterial({ map: tex, color: 0xffffff, flatShading: true });
-  if (skinId) loadOrFallback(`/textures/skins/${skinId}.png`, m);
+  if (skinId) loadOrFallback(asset(`/textures/skins/${skinId}.png`), m);
   return m;
 }
 

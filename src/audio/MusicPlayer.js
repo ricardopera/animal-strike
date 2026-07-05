@@ -2,6 +2,7 @@
 // AudioBuffer; falls back to a synthesized WebAudio pad loop if a file is missing
 // or fails to load, so the game is never silent (resilience per design spec).
 import { resumeAudio } from './Audio.js';
+import { asset } from '../config/paths.js';
 
 let ctx = null;
 function ensure() {
@@ -10,8 +11,8 @@ function ensure() {
 }
 
 const TRACKS = {
-  menu: '/audio/music/menu_loop.mp3',
-  combat: '/audio/music/combat_loop.mp3',
+  menu: asset('/audio/music/menu_loop.mp3'),
+  combat: asset('/audio/music/combat_loop.mp3'),
 };
 
 export class MusicPlayer {
