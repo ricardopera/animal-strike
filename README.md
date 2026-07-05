@@ -4,7 +4,11 @@ A fast, skill-based **browser FPS** in the spirit of [Krunker.io](https://krunke
 
 Pick an animal-headed gunner, pick a weapon, and frag your way to 25 kills before the bots do.
 
-![AnimalStrike](https://img.shields.io/badge/three.js-r0.185-black) ![tests](https://img.shields.io/badge/tests-148%20passing-brightgreen) ![status](https://img.shields.io/badge/status-playable-success)
+### ▶️ Play now
+
+**👉 [https://ricardopera.github.io/animal-strike/](https://ricardopera.github.io/animal-strike/)** — hosted on GitHub Pages. Click the canvas, pick your loadout, hit PLAY. (Multiplayer Host/Join requires running the Node server locally — see [Host a match](#-host-a-match-multiplayer).)
+
+![AnimalStrike](https://img.shields.io/badge/three.js-r0.185-black) ![tests](https://img.shields.io/badge/tests-148%20passing-brightgreen) ![status](https://img.shields.io/badge/status-playable-success) ![deploy](https://img.shields.io/badge/play-github%20pages-success)
 
 ---
 
