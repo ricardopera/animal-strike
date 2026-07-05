@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/png" href="./favicon.png" />
+  <meta name="theme-color" content="#14161a" />
+  <meta name="description" content="AnimalStrike — a fast, skill-based browser FPS. Pick an animal-headed gunner, pick a weapon, and frag your way to victory." />
+  <title>AnimalStrike</title>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #87ceeb; }
+    #game { display: block; width: 100vw; height: 100vh; }
+    #ui { position: fixed; inset: 0; pointer-events: none; color: #fff; font-family: system-ui, sans-serif; }
+  </style>
+  <script type="module" crossorigin src="/animal-strike/assets/index-Ck1MRyQw.js"></script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="ui">
+    <div id="vignette" style="position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 200px 60px rgba(180,0,0,0);transition:box-shadow .25s;"></div>
+  </div>
+</body>
+</html>
