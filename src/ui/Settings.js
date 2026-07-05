@@ -13,7 +13,7 @@ export class SettingsPanel {
     this.s = loadSettings();
     this.el = document.createElement('div');
     this.el.style.cssText = `position:absolute;right:24px;top:24px;background:rgba(10,14,20,.9);color:#fff;
-      padding:16px;border-radius:10px;font-family:system-ui,sans-serif;pointer-events:auto;display:none;`;
+      padding:16px;border-radius:10px;font-family:system-ui,sans-serif;pointer-events:auto;display:none;z-index:60;`;
     root.appendChild(this.el);
     this.render();
   }
