@@ -36,6 +36,7 @@ import { setActiveSkin as setWeaponSkin } from '../player/WeaponParts.js';
 import { DEFAULT_SKIN } from '../config/WeaponSkins.js';
 import { RemoteView } from '../net/RemoteView.js';
 import { SettingsPanel } from '../ui/Settings.js';
+import { PauseMenu } from '../ui/PauseMenu.js';
 import { DamageNumbers } from '../fx/DamageNumbers.js';
 
 // Module-level scratch vectors reused across hitscan to avoid per-shot GC churn.
@@ -158,6 +159,7 @@ export class Game {
     this.firstPersonView.setWeapon('AR');
 
     // Match state (inactive until startMatch)
+    this.paused = false;
     this.match = { active: false, timeLeft: MATCH.matchSeconds, fragTarget: MATCH.fragTarget, over: false };
     this.respawnTimers = new Map();
 
@@ -202,7 +204,50 @@ export class Game {
       },
       onToggleSettings: () => this.settings.toggle(),
     });
+    this.pauseMenu = new PauseMenu(uiRoot, {
+      onResume: () => {
+        this.pauseMenu.hide();
+        this.paused = false;
+        this.input.requestPointerLock();
+      },
+      onToggleSettings: () => this.settings.toggle(),
+      onLeave: () => this.returnToMenu(),
+    });
     this.applySettings(this.settings.settings);
+
+    // Esc toggles a pause menu during an active match: shows the menu + exits
+    // pointer lock; Resume hides it + re-locks the pointer so mouse-look resumes.
+    // (The browser natively exits pointer lock on Esc; without this handler the
+    // player was stranded with no menu and no way to re-acquire aim.)
+    window.addEventListener('keydown', (e) => {
+      if (e.code !== 'Escape') return;
+      // If settings is open (from the pause menu), Esc closes settings rather than toggling pause.
+      if (this.settings.el.style.display !== 'none') { this.settings.toggle(); return; }
+      // Only pause during an active, in-progress match — never on the main menu
+      // (where Esc would be meaningless) or the end screen.
+      const onMainMenu = this.menu.el.style.display === 'flex' || this.menu.el.style.display === '';
+      const onEndScreen = this.endScreen.el.style.display === 'flex';
+      if (!this.match.active || this.match.over || onMainMenu || onEndScreen) return;
+      this.paused = !this.paused;
+      if (this.paused) {
+        this.pauseMenu.show();
+        if (document.pointerLockElement) document.exitPointerLock();
+      } else {
+        this.pauseMenu.hide();
+        this.input.requestPointerLock();
+      }
+    });
+
+    // Browsers suppress the Escape keydown while pointer-locked, so we detect
+    // "user wants to pause" via the pointer-lock loss that Esc (or tab-switch)
+    // triggers. When lock drops mid-match, open the pause menu.
+    document.addEventListener('pointerlockchange', () => {
+      if (document.pointerLockElement) return;            // lock (re-)acquired — nothing to do
+      if (this.match.active && !this.match.over && !this.paused) {
+        this.paused = true;
+        this.pauseMenu.show();
+      }
+    });
 
     // Unlock audio + start menu music on the first user gesture (autoplay policy).
     this._audioUnlocked = false;
@@ -300,6 +345,7 @@ export class Game {
   }
 
   startMatch(animalId, weaponId, mapId) {
+    this.paused = false;
     // Switch map if a different one was selected.
     const map = getMapById(mapId) || this.activeMap;
     if (map.id !== this.activeMap.id) this.loadMap(map);
@@ -411,6 +457,7 @@ export class Game {
   // local player uses naive prediction (local movement for responsiveness); remote
   // players + bots render purely from server snapshots via RemoteView interpolation.
   async startMultiplayer(mode, address, animalId, weaponId, mapId) {
+    this.paused = false;
     this.mpMode = mode;
     this.mpAnimal = animalId;
     this.mpWeapon = weaponId;
@@ -468,6 +515,8 @@ export class Game {
       this.match.timeLeft = snap.timeLeft;
     };
     this.netClient.onMatchEnd = (ranked) => {
+      this.pauseMenu.hide();
+      this.paused = false;
       this.match.active = false; this.match.over = true;
       if (document.pointerLockElement) document.exitPointerLock();
       this.music.play('menu');
@@ -494,6 +543,8 @@ export class Game {
   }
 
   returnToMenu() {
+    this.paused = false;
+    this.pauseMenu.hide();
     this.match.active = false;
     this.match.over = true;
     this.mpActive = false;
@@ -517,6 +568,8 @@ export class Game {
 
   endMatch() {
     if (this.match.over) return;
+    this.pauseMenu.hide();
+    this.paused = false;
     this.match.over = true;
     this.match.active = false;
     if (document.pointerLockElement) document.exitPointerLock();
@@ -554,6 +607,7 @@ export class Game {
   }
 
   frameMultiplayer(realDt) {
+    if (this.paused) return;
     if (!this.netClient || !this.player) return;
     // Look
     if (this.match.active) {
@@ -632,6 +686,7 @@ export class Game {
   }
 
   frame(realDt) {
+    if (this.paused) return;
     // Multiplayer path: send input + render from server snapshots. Keeps the
     // single-player inline sim path below fully untouched.
     if (this.mpActive) { this.frameMultiplayer(realDt); return; }
