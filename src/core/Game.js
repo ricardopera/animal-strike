@@ -196,7 +196,7 @@ export class Game {
         // weapons the player holds). Done before the match starts so the gun is
         // skinned from the first frame.
         setWeaponSkin(skin || DEFAULT_SKIN);
-        if (mode === 'host' || mode === 'join') {
+        if (mode === 'connect') {
           this.startMultiplayer(mode, address, animal, weapon, map);
         } else {
           this.startMatch(animal, weapon, map);
@@ -465,29 +465,34 @@ export class Game {
     // Teardown any existing MP state.
     this.cleanupMultiplayer();
 
-    const url = mode === 'host'
-      ? `ws://localhost:8080`
-      : `ws://${address}`;
+    // Connect-only: every multiplayer client joins the dedicated server by address.
+    const url = `ws://${address}`;
     this.netClient = new NetClient();
     this.netClient.onWelcome = (m) => {
       this.mpLocalId = m.you;
+      this.menu.setSelectedMap(m.map);
+      this.mpMap = m.map;
       this.hud.setWeapon(WEAPONS[weaponId].name);
       this.hud.setWeaponIcon(weaponId);
       this.firstPersonView.setWeapon(weaponId);
-      // If host, immediately start the match.
-      if (m.isHost) {
-        this.netClient.start(mapId, MATCH.fragTarget, MATCH.matchSeconds);
-      }
+      this.mpStartListener = (e) => {
+        if (e.key === 'Enter' && this.netClient && !this.match.active) {
+          this.netClient.start(this.mpMap);
+        }
+      };
+      window.addEventListener('keydown', this.mpStartListener);
+    };
+    this.netClient.onMapSelected = (m) => {
+      this.mpMap = m.map;
+      this.menu.setSelectedMap(m.map);
     };
     this.netClient.onMatchStart = (m) => {
-      // Switch the arena + sky/fog to the host's chosen map.
       const map = getMapById(m.map) || this.activeMap;
       if (map.id !== this.activeMap.id) this.loadMap(map);
       this.match = { active: true, timeLeft: m.seconds, fragTarget: m.fragTarget, over: false };
       resumeAudio();
       this.music.play('combat');
       this.firstPersonView.endReload();
-      // Build a local predicted player for our own movement/aim.
       this.player = createPlayer({ id: this.mpLocalId, isLocal: true, position: new THREE.Vector3(0, 1, 15), animalId });
       this.applyAnimalStats(this.player, animalId);
       this.player.view = new CharacterView(this.scene);
@@ -501,11 +506,9 @@ export class Game {
     };
     this.netClient.onSnapshot = (snap) => {
       if (this.remoteView) this.remoteView.pushSnapshot(snap);
-      // Reconcile local predicted position toward the authoritative value (~80ms lerp).
       const me = snap.players.find(p => p.id === this.mpLocalId);
       if (me && this.player) {
         this.player.health = me.hp;
-        // gentle pull toward server position to correct drift
         this.player.position.x += (me.x - this.player.position.x) * 0.15;
         this.player.position.y += (me.y - this.player.position.y) * 0.15;
         this.player.position.z += (me.z - this.player.position.z) * 0.15;
@@ -522,14 +525,22 @@ export class Game {
       this.music.play('menu');
       this.endScreen.show(ranked.map(r => ({ ...r, isLocal: r.id === this.mpLocalId })));
     };
+    this.netClient.onKick = (m) => {
+      this.hud.addKill('Kicked: ' + (m.reason || ''));
+      this.returnToMenu();
+    };
+    this.netClient.onError = (m) => {
+      this.hud.addKill('Server error: ' + (m.msg || m.code || ''));
+    };
     this.netClient.onDisconnect = () => {
-      this.hud.addKill('Disconnected from host.');
+      this.hud.addKill('Disconnected from server.');
       this.returnToMenu();
     };
     this.menu.hide();
     try {
       await this.netClient.connect(url);
       this.netClient.hello('You', animalId, weaponId);
+      this.netClient.selectMap(mapId);
     } catch (e) {
       this.hud.addKill('Could not connect to ' + url);
       this.menu.show();
@@ -537,6 +548,7 @@ export class Game {
   }
 
   cleanupMultiplayer() {
+    if (this.mpStartListener) { window.removeEventListener('keydown', this.mpStartListener); this.mpStartListener = null; }
     if (this.remoteView) { this.remoteView.dispose(); this.remoteView = null; }
     if (this.netClient) { this.netClient.close(); this.netClient = null; }
     this.mpActive = false;

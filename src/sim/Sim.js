@@ -29,7 +29,9 @@ const _ray = new THREE.Ray();
 const _hit = new THREE.Vector3();
 
 export class Sim {
-  constructor() {
+  constructor(options) {
+    this.maxPlayers = (options && options.maxPlayers) || MAX_PLAYERS;
+    this._nextHumanId = 1;       // monotonic; guarantees unique ids across reconnect cycles
     this.colliders = new ColliderStore();
     this.players = [];          // humans + bots (the entity store)
     this.bots = [];             // refs into players[] that are bot-controlled
@@ -43,7 +45,7 @@ export class Sim {
   }
 
   addHuman(name, animalId, weaponId, position) {
-    const id = 'H' + (this.humans.size + 1);
+    const id = 'H' + (this._nextHumanId++);
     // Before a match starts there's no active map/spawn set; default to origin.
     const startPos = position || (this.activeMap ? this._freeSpawn() : new THREE.Vector3(0, 1, 0));
     const p = createPlayer({ id, isLocal: false, position: startPos, animalId });
@@ -83,7 +85,7 @@ export class Sim {
     this.players = this.players.filter(p => this.humans.has(p.id));
     this.bots = [];
     const botWeapons = Object.keys(WEAPONS);
-    while (this.players.length < MAX_PLAYERS) {
+    while (this.players.length < this.maxPlayers) {
       const sp = this._freeSpawn(occupied); occupied.push(sp);
       const i = this.bots.length;
       const animal = ANIMAL_IDS[i % ANIMAL_IDS.length];
@@ -119,6 +121,26 @@ export class Sim {
       this.bots.push(p);
     }
     this.events.push({ k: 'roster' });
+  }
+
+  // Number of bot slots available for a late-joining human (maxPlayers minus humans).
+  freeSlots() { return this.maxPlayers - this.humans.size; }
+
+  // A late-joining human takes over an existing bot's entity: position, health,
+  // score, alive-state, and loadout stay; only control flips to human. Returns
+  // the (now-human) entity, or null if there is no bot to take over.
+  takeOverBot(name, animalId, weaponId) {
+    const bot = this.bots.shift();
+    if (!bot) return null;
+    bot.name = name;
+    if (animalId) bot.animalId = animalId;
+    if (weaponId) {
+      bot.loadout.primary = weaponId;
+      bot.weapon = new WeaponController(WEAPONS[weaponId]);
+      bot.weapon.fireCallback = () => bot.pendingShots.push({});
+    }
+    this.humans.set(bot.id, bot);
+    return bot;
   }
 
   tick(dt) {

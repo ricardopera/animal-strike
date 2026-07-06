@@ -10,3 +10,13 @@ export function parseSnapshot(raw) {
   const m = parse(raw);
   return m && m.t === 'snapshot' ? m : null;
 }
+
+// Typed builders for the new dedicated-server messages. Thin wrappers over msg()
+// so client and server can't drift on field names.
+export const msgAuth       = (name, animal, weapon) => msg('auth', { name, animal, weapon });
+export const msgReconnect  = (id, token) => msg('reconnect', { id, token });
+export const msgSelectMap  = (map) => msg('selectMap', { map });
+export const msgWelcome    = (you, token, map, roster) => msg('welcome', { you, token, map, roster });
+export const msgMapSelected = (map) => msg('mapSelected', { map });
+export const msgKick       = (reason) => msg('kick', { reason });
+export const msgError      = (code, msgText) => msg('error', { code, msg: msgText });
