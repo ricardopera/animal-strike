@@ -8,6 +8,9 @@ import { loadConfig } from './config.js';
 import { sanitizeName, dedupeName, clampInput, validateMessage } from './validation.js';
 import { RateLimiter, ConnectionCap } from './rateLimiter.js';
 import { ReconnectRegistry } from './reconnect.js';
+import { MAPS } from '../src/world/Maps.js';
+
+const MAP_IDS = new Set(MAPS.map(m => m.id));
 
 const HANDSHAKE_TIMEOUT_MS = 5000;
 const INPUT_RATE_LIMIT_PER_SEC = 70;
@@ -187,6 +190,7 @@ export function createRoom(config) {
   function operatorStart(mapId) {
     if (sim.match.active) return false;
     const id = mapId || lobbyMap;
+    if (!MAP_IDS.has(id)) return false;
     sim.startMatch(id, cfg.fragTarget, cfg.matchSeconds);
     broadcast(msg('matchStart', { map: sim.activeMap.id, fragTarget: sim.match.fragTarget, seconds: sim.match.timeLeft }));
     return true;
@@ -194,7 +198,7 @@ export function createRoom(config) {
   function humanCount() {
     let n = 0; for (const e of clients.values()) if (e.entry && e.entry.player) n++; return n;
   }
-  function setLobbyMap(id) { lobbyMap = id; broadcast(msgMapSelected(lobbyMap)); }
+  function setLobbyMap(id) { if (!MAP_IDS.has(id)) return false; lobbyMap = id; broadcast(msgMapSelected(lobbyMap)); return true; }
 
   // Advance the sim one tick; broadcast a snapshot every 3rd tick (~20Hz).
   function step(dt) {
@@ -247,10 +251,10 @@ export function main() {
     const [cmd, ...rest] = line.split(/\s+/);
     if (cmd === 'start') {
       const ok = room.operatorStart(rest[0]);
-      console.log(ok ? `match started` : `match already running`);
+      console.log(ok ? `match started` : (rest[0] && !MAP_IDS.has(rest[0]) ? `unknown map: ${rest[0]}` : `match already running`));
     } else if (cmd === 'map') {
-      room.setLobbyMap(rest[0]);
-      console.log(`lobby map set to ${rest[0]}`);
+      const ok = room.setLobbyMap(rest[0]);
+      console.log(ok ? `lobby map set to ${rest[0]}` : `unknown map: ${rest[0]}`);
     } else if (cmd === 'status') {
       console.log(`match.active=${room.sim.match.active} humans=${room.humanCount()} lobby=${room.lobbyMap}`);
     } else if (cmd === 'stop') {
