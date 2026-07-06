@@ -1,110 +1,276 @@
 import { WebSocketServer } from 'ws';
-import * as THREE from 'three';
 import { Sim } from '../src/sim/Sim.js';
 import { msg, parse } from '../src/sim/protocol.js';
+import {
+  msgWelcome, msgMapSelected, msgKick, msgError,
+} from '../src/sim/protocol.js';
+import { loadConfig } from './config.js';
+import { sanitizeName, dedupeName, clampInput, validateMessage } from './validation.js';
+import { RateLimiter, ConnectionCap } from './rateLimiter.js';
+import { ReconnectRegistry } from './reconnect.js';
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 8080;
-const MAX_PLAYERS = 6;
+const HANDSHAKE_TIMEOUT_MS = 5000;
+const INPUT_RATE_LIMIT_PER_SEC = 70;
+const TICK_HZ = 60;
 
-// A room owns one authoritative Sim + the connected clients. The first client
-// to join becomes the host (can start the match). `createRoom` is exported for
-// in-process testing; `main()` runs the real WebSocketServer when executed directly.
-export function createRoom() {
+// Create a Room bound to a parsed config. Exposed for in-process testing; main()
+// runs the real WebSocketServer when executed directly.
+export function createRoom(config) {
+  const cfg = config || loadConfig({});
   const sim = new Sim();
-  const clients = new Map();   // client obj -> { player, isHost, pendingKit }
+  const clients = new Map();      // ws -> { entry, ip, lastInputMs, inputCount }
+  const reconnect = new ReconnectRegistry(60000);
+  const connLimit = new ConnectionCap(cfg.maxPerIp);
+  const authLimit = new RateLimiter(cfg.rateLimit);
+  let lobbyMap = cfg.map;
   let tickCount = 0;
 
-  function broadcast(messageStr) { for (const c of clients.keys()) c.send(messageStr); }
+  function nowMs() { return Date.now(); }
+  function ipOf(ws) { return (ws._socket && ws._socket.remoteAddress) || 'unknown'; }
+
+  function broadcast(messageStr) { for (const c of clients.keys()) { try { c.send(messageStr); } catch {} } }
+
+  function activeNames() {
+    const names = [];
+    for (const e of clients.values()) if (e.entry && e.entry.player) names.push(e.entry.player.name);
+    // include bot names so dedupe avoids "Bot 1" collisions too
+    for (const b of sim.bots) names.push(b.name);
+    return names;
+  }
 
   function roster() {
-    return [...clients.values()]
-      .filter(e => e.player)
-      .map(e => ({
-        id: e.player.id, name: e.player.name, animal: e.player.animalId,
-        weapon: e.player.loadout.primary, isHost: e.isHost,
-      }));
-  }
-
-  function addClient(client) {
-    clients.set(client, { player: null, isHost: clients.size === 0, pendingKit: null });
-  }
-
-  function handleMessage(client, raw) {
-    const m = parse(raw); if (!m) return;
-    const entry = clients.get(client); if (!entry) return;
-
-    if (m.t === 'hello') {
-      entry.pendingKit = { name: m.name || 'Player', animal: m.animal || 'FOX', weapon: m.weapon || 'AR' };
-      // Don't add to the sim yet — assign on match start so startMatch spawns them.
-      // But we need an id to welcome them, so add now if a match isn't running.
-      if (!entry.player) {
-        entry.player = sim.addHuman(entry.pendingKit.name, entry.pendingKit.animal, entry.pendingKit.weapon);
+    const humans = [];
+    for (const e of clients.values()) {
+      if (e.entry && e.entry.player) {
+        humans.push({
+          id: e.entry.player.id, name: e.entry.player.name,
+          animal: e.entry.player.animalId, weapon: e.entry.player.loadout.primary,
+          isBot: false,
+        });
       }
-      client.send(msg('welcome', { you: entry.player.id, isHost: entry.isHost, roster: roster() }));
+    }
+    const bots = sim.bots.map(b => ({
+      id: b.id, name: b.name, animal: b.animalId, weapon: b.loadout.primary, isBot: true,
+    }));
+    return [...humans, ...bots];
+  }
+
+  // --- connection lifecycle ---
+
+  function addClient(ws) {
+    const ip = ipOf(ws);
+    if (!connLimit.canAcquire(ip)) {
+      ws.send(msgKick('too many connections'));
+      ws.close();
+      return false;
+    }
+    connLimit.acquire(ip);
+    clients.set(ws, { entry: null, ip, lastInputMs: 0, inputCount: 0, handshakeTimer: null });
+    // Force a handshake within the grace window.
+    const rec = clients.get(ws);
+    rec.handshakeTimer = setTimeout(() => {
+      if (!rec.entry) { try { ws.send(msgKick('handshake timeout')); } catch {} ws.close(); }
+    }, HANDSHAKE_TIMEOUT_MS);
+    return true;
+  }
+
+  function welcomeClient(ws, entry) {
+    const { token } = reconnect.mint(entry.player.id, entry.player.id, nowMs());
+    ws.send(msgWelcome(entry.player.id, token, lobbyMap, roster()));
+    entry.token = token;
+  }
+
+  function doAuth(ws, m) {
+    const rec = clients.get(ws);
+    if (!rec) return;
+    const ip = rec.ip;
+    if (!authLimit.try(ip, nowMs())) { ws.send(msgKick('rate limit')); ws.close(); return; }
+    if (rec.entry) return; // already authed
+    // Match running + no free slots? Reject (match is full of humans + bots at maxPlayers).
+    if (sim.match.active && sim.freeSlots() <= 0) {
+      ws.send(msgKick('Server full')); ws.close(); return;
+    }
+    const rawName = sanitizeName(m.name) || 'Player';
+    const name = dedupeName(rawName, activeNames());
+    const animal = m.animal || 'FOX';
+    const weapon = m.weapon || 'AR';
+    let player;
+    if (sim.match.active) {
+      // Late join: take over a bot slot.
+      player = sim.takeOverBot(name, animal, weapon);
+    } else {
+      player = sim.addHuman(name, animal, weapon);
+    }
+    const entry = { player, token: null };
+    rec.entry = entry;
+    if (rec.handshakeTimer) { clearTimeout(rec.handshakeTimer); rec.handshakeTimer = null; }
+    welcomeClient(ws, entry);
+    broadcast(msg('roster', { roster: roster() }));
+  }
+
+  function doReconnect(ws, m) {
+    const rec = clients.get(ws);
+    if (!rec || rec.entry) return;
+    const res = reconnect.verify(m.id, m.token, nowMs());
+    if (!res.ok) { ws.send(msgError('bad_reconnect', 'invalid or expired')); return; }
+    const entity = sim.players.find(p => p.id === res.entityId);
+    if (!entity) { ws.send(msgError('bad_reconnect', 'entity gone')); return; }
+    // Flip the entity (currently bot-controlled) back to human.
+    sim.bots = sim.bots.filter(b => b !== entity);
+    sim.humans.set(entity.id, entity);
+    rec.entry = { player: entity, token: m.token };
+    if (rec.handshakeTimer) { clearTimeout(rec.handshakeTimer); rec.handshakeTimer = null; }
+    ws.send(msgWelcome(entity.id, m.token, lobbyMap, roster()));
+    broadcast(msg('roster', { roster: roster() }));
+    if (sim.match.active) {
+      ws.send(msg('matchStart', { map: sim.activeMap.id, fragTarget: sim.match.fragTarget, seconds: sim.match.timeLeft }));
+    }
+    reconnect.drop(m.id); // consume the one-time token
+  }
+
+  function handleMessage(ws, raw) {
+    const rec = clients.get(ws); if (!rec) return;
+    const m = parse(raw);
+    const v = validateMessage(m);
+    if (!v.ok) { ws.send(msgError(v.code, 'malformed message')); return; }
+
+    // Pre-auth: only auth/reconnect allowed.
+    if (!rec.entry) {
+      if (m.t === 'auth') return doAuth(ws, m);
+      if (m.t === 'reconnect') return doReconnect(ws, m);
+      return; // ignore everything else until authed
+    }
+    const player = rec.entry.player;
+
+    if (m.t === 'loadout') {
+      player.animalId = m.animal; player.loadout.primary = m.weapon;
       broadcast(msg('roster', { roster: roster() }));
-    } else if (m.t === 'loadout' && entry.player) {
-      entry.player.animalId = m.animal; entry.player.loadout.primary = m.weapon;
-      broadcast(msg('roster', { roster: roster() }));
-    } else if (m.t === 'input' && entry.player && sim.match.active) {
-      sim.setPlayerIntent(entry.player.id, {
-        forward: m.f, strafe: m.s, jump: m.j, sprint: m.sp, crouch: m.c,
-        firing: m.fire, reloadRequested: m.reload, yaw: m.yaw, pitch: m.pitch,
-      });
-    } else if (m.t === 'start' && entry.isHost) {
-      sim.startMatch(m.map || 'plaza', m.fragTarget || 25, m.seconds || 300);
+    } else if (m.t === 'selectMap') {
+      if (sim.match.active) { ws.send(msgError('match_in_progress', 'cannot change map now')); return; }
+      lobbyMap = m.map;
+      broadcast(msgMapSelected(lobbyMap));
+    } else if (m.t === 'start') {
+      if (sim.match.active) { ws.send(msgError('match_in_progress', 'match already running')); return; }
+      const mapId = m.map || lobbyMap;
+      sim.startMatch(mapId, cfg.fragTarget, cfg.matchSeconds);
       broadcast(msg('matchStart', { map: sim.activeMap.id, fragTarget: sim.match.fragTarget, seconds: sim.match.timeLeft }));
+    } else if (m.t === 'input') {
+      if (!sim.match.active) return;
+      // Rate-limit inputs (~70/s ceiling over a 1s sliding window).
+      const t = nowMs();
+      rec.inputCount = (t - rec.lastInputMs < 1000) ? rec.inputCount + 1 : 1;
+      rec.lastInputMs = t;
+      if (rec.inputCount > INPUT_RATE_LIMIT_PER_SEC) return; // drop flood
+      const c = clampInput(m);
+      sim.setPlayerIntent(player.id, {
+        forward: c.f, strafe: c.s, jump: c.j, sprint: c.sp, crouch: c.c,
+        firing: c.fire, reloadRequested: c.reload, yaw: c.yaw, pitch: c.pitch,
+      });
     }
   }
 
-  function handleDisconnect(client) {
-    const entry = clients.get(client); if (!entry) return;
-    if (entry.player) sim.handleDisconnect(entry.player.id);
-    clients.delete(client);
-    // If the host left, promote the next client.
-    if (entry.isHost) {
-      const next = [...clients.values()][0];
-      if (next) { next.isHost = true; broadcast(msg('roster', { roster: roster() })); }
-    } else {
+  function handleDisconnect(ws) {
+    const rec = clients.get(ws); if (!rec) return;
+    const ip = rec.ip;
+    connLimit.release(ip);
+    if (rec.handshakeTimer) clearTimeout(rec.handshakeTimer);
+    if (rec.entry && rec.entry.player) {
+      const pid = rec.entry.player.id;
+      reconnect.mint(pid, pid, nowMs()); // remember for 60s; entity becomes bot below
+      sim.handleDisconnect(pid);         // immediately convert to bot (match stays full)
       broadcast(msg('roster', { roster: roster() }));
     }
+    clients.delete(ws);
   }
+
+  // operator: start a match from stdin/auto-start
+  function operatorStart(mapId) {
+    if (sim.match.active) return false;
+    const id = mapId || lobbyMap;
+    sim.startMatch(id, cfg.fragTarget, cfg.matchSeconds);
+    broadcast(msg('matchStart', { map: sim.activeMap.id, fragTarget: sim.match.fragTarget, seconds: sim.match.timeLeft }));
+    return true;
+  }
+  function humanCount() {
+    let n = 0; for (const e of clients.values()) if (e.entry && e.entry.player) n++; return n;
+  }
+  function setLobbyMap(id) { lobbyMap = id; broadcast(msgMapSelected(lobbyMap)); }
 
   // Advance the sim one tick; broadcast a snapshot every 3rd tick (~20Hz).
   function step(dt) {
     if (!sim.match.active) return;
     sim.tick(dt);
     tickCount++;
-    if (tickCount % 3 === 0) {
-      const snap = sim.snapshot();
-      broadcast(msg('snapshot', snap));
-    }
-    // match ended during this tick?
+    if (tickCount % 3 === 0) broadcast(msg('snapshot', sim.snapshot()));
     if (sim.match.over && !sim.match.active) {
       broadcast(msg('matchEnd', { ranked: sim.ranked() }));
-      sim.match.over = false;  // reset flag so we don't rebroadcast
+      sim.match.over = false;
+      lobbyMap = cfg.map; // reset lobby map to default after a match
     }
   }
 
-  return { sim, addClient, handleMessage, handleDisconnect, step, roster };
+  return {
+    sim, cfg, reconnect,
+    addClient, handleMessage, handleDisconnect, step,
+    operatorStart, humanCount, setLobbyMap,
+    roster, get lobbyMap() { return lobbyMap; },
+  };
 }
 
 export function main() {
-  const wss = new WebSocketServer({ port: PORT });
-  const room = createRoom();
+  const config = loadConfig();
+  const wss = new WebSocketServer({ host: config.host, port: config.port });
+  const room = createRoom(config);
   let last = Date.now();
-  setInterval(() => {
-    const now = Date.now();
-    let dt = (now - last) / 1000; last = now;
+  const tickMs = 1000 / TICK_HZ;
+  const tickInterval = setInterval(() => {
+    const t = Date.now();
+    let dt = (t - last) / 1000; last = t;
     if (dt > 0.1) dt = 0.1;
     room.step(dt);
-  }, 1000 / 60);
+    // auto-start once enough humans are connected
+    if (config.autoStart && !room.sim.match.active && room.humanCount() >= config.minPlayers) {
+      room.operatorStart();
+    }
+  }, tickMs);
+
+  // Periodic GC of expired reconnect tokens + rate-limit buckets.
+  setInterval(() => {
+    room.reconnect.sweep(Date.now());
+  }, 30000);
+
+  // Operator stdin commands.
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (chunk) => {
+    const line = chunk.trim();
+    if (!line) return;
+    const [cmd, ...rest] = line.split(/\s+/);
+    if (cmd === 'start') {
+      const ok = room.operatorStart(rest[0]);
+      console.log(ok ? `match started` : `match already running`);
+    } else if (cmd === 'map') {
+      room.setLobbyMap(rest[0]);
+      console.log(`lobby map set to ${rest[0]}`);
+    } else if (cmd === 'status') {
+      console.log(`match.active=${room.sim.match.active} humans=${room.humanCount()} lobby=${room.lobbyMap}`);
+    } else if (cmd === 'stop') {
+      clearInterval(tickInterval); wss.close(); process.exit(0);
+    } else {
+      console.log(`commands: start [map] | map <id> | status | stop`);
+    }
+  });
+
   wss.on('connection', (ws) => {
-    room.addClient(ws);
+    if (!room.addClient(ws)) return;
     ws.on('message', (data) => room.handleMessage(ws, data.toString()));
     ws.on('close', () => room.handleDisconnect(ws));
+    ws.on('error', () => room.handleDisconnect(ws));
   });
-  console.log(`AnimalStrike host server listening on ws://0.0.0.0:${PORT}`);
-  console.log(`Share this address with players: ws://<your-ip>:${PORT}`);
+
+  const display = config.host === '0.0.0.0' ? '<this-machine-ip>' : config.host;
+  console.log(`AnimalStrike dedicated server listening on ws://${config.host}:${config.port}`);
+  console.log(`Players connect to: ws://<your-ip>:${config.port}  (LAN/public: ${display})`);
+  console.log(`Config: maxPlayers=${config.maxPlayers} map=${config.map} fragTarget=${config.fragTarget} matchSeconds=${config.matchSeconds} autoStart=${config.autoStart}`);
 }
 
 // Run main only when executed directly (`node server/index.js`), not when imported.
