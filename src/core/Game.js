@@ -241,10 +241,13 @@ export class Game {
 
     // Browsers suppress the Escape keydown while pointer-locked, so we detect
     // "user wants to pause" via the pointer-lock loss that Esc (or tab-switch)
-    // triggers. When lock drops mid-match, open the pause menu.
+    // triggers. When lock drops mid-match, open the pause menu — but ONLY in
+    // single-player. In multiplayer, losing pointer lock should NOT pause the
+    // game (the server keeps running, and pausing the client render loop makes
+    // the player appear frozen/stuck). The player can click to re-lock.
     document.addEventListener('pointerlockchange', () => {
       if (document.pointerLockElement) return;            // lock (re-)acquired — nothing to do
-      if (this.match.active && !this.match.over && !this.paused) {
+      if (this.match.active && !this.match.over && !this.paused && !this.mpActive) {
         this.paused = true;
         this.pauseMenu.show();
       }
