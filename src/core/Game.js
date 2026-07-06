@@ -515,7 +515,16 @@ export class Game {
       if (me && this.player) {
         this.player.health = me.hp;
         this.player.alive = me.alive;
-        this.hud.setAmmo(me.ammo, this.weapon.def.mag);
+        // NOTE: do NOT set ammo/weapon HUD from the snapshot. The local weapon
+        // ticks every frame (see frameMultiplayer) and is the responsive source
+        // of truth for the ammo counter; the server's value is ~1 round trip
+        // stale, so overwriting the HUD here would make the counter flicker
+        // upward every snapshot while firing. Only resync ammo on a real
+        // discontinuity (large gap = respawn/reconnect/lost shots), where the
+        // server value is more trustworthy than the local prediction.
+        if (Math.abs(me.ammo - this.weapon.ammo) > 3) {
+          this.weapon.ammo = me.ammo;
+        }
         // Naive prediction reconciliation: the local sim runs the SAME movement
         // code as the server, so for a healthy connection the server's state
         // matches the prediction. We must NOT overwrite local velocity/onGround
