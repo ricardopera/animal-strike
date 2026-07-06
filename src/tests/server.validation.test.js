@@ -90,4 +90,16 @@ describe('validateMessage', () => {
     expect(validateMessage({ t: 'start', map: 'foundry' }).ok).toBe(true);
     expect(validateMessage({ t: 'start' }).ok).toBe(true); // map optional (lobby default)
   });
+  it('auth rejects an unknown weapon id', () => {
+    expect(validateMessage({ t: 'auth', name: 'X', animal: 'FOX', weapon: 'NUKE' }).ok).toBe(false);
+  });
+  it('auth rejects an unknown animal id', () => {
+    expect(validateMessage({ t: 'auth', name: 'X', animal: 'DRAGON', weapon: 'AR' }).ok).toBe(false);
+  });
+  it('auth accepts missing animal/weapon (server applies defaults)', () => {
+    expect(validateMessage({ t: 'auth', name: 'X' }).ok).toBe(true);
+  });
+  it('loadout rejects an unknown weapon id', () => {
+    expect(validateMessage({ t: 'loadout', animal: 'FOX', weapon: 'NUKE' }).ok).toBe(false);
+  });
 });

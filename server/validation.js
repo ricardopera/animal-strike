@@ -1,6 +1,10 @@
 import { MAPS } from '../src/world/Maps.js';
+import { ANIMAL_IDS } from '../src/config/Animals.js';
+import { WEAPONS } from '../src/config/Weapons.js';
 
 const MAP_IDS = new Set(MAPS.map(m => m.id));
+const ANIMAL_ID_SET = new Set(ANIMAL_IDS);
+const WEAPON_ID_SET = new Set(Object.keys(WEAPONS));
 
 const PITCH_MAX = Math.PI / 2 - 0.01;
 
@@ -47,9 +51,12 @@ export function clampInput(m) {
 // Allowlist of inbound message types + their validators.
 // Returns { ok: true } or { ok: false, code }.
 const VALIDATORS = {
-  auth: (m) => typeof m.name === 'string' || m.name === undefined,
+  auth: (m) => (typeof m.name === 'string' || m.name === undefined)
+            && (m.animal === undefined || ANIMAL_ID_SET.has(m.animal))
+            && (m.weapon === undefined || WEAPON_ID_SET.has(m.weapon)),
   reconnect: (m) => typeof m.id === 'string' && typeof m.token === 'string',
-  loadout: (m) => typeof m.animal === 'string' && typeof m.weapon === 'string',
+  loadout: (m) => (m.animal === undefined || ANIMAL_ID_SET.has(m.animal))
+            && (m.weapon === undefined || WEAPON_ID_SET.has(m.weapon)),
   selectMap: (m) => typeof m.map === 'string' && MAP_IDS.has(m.map),
   start: (m) => m.map === undefined || (typeof m.map === 'string' && MAP_IDS.has(m.map)),
   input: (m) => true, // clamped separately; any shape is accepted (junk becomes zeros)

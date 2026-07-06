@@ -1,4 +1,5 @@
 import { WebSocketServer } from 'ws';
+import { readFileSync } from 'node:fs';
 import { Sim } from '../src/sim/Sim.js';
 import { msg, parse } from '../src/sim/protocol.js';
 import {
@@ -20,7 +21,7 @@ const TICK_HZ = 60;
 // runs the real WebSocketServer when executed directly.
 export function createRoom(config) {
   const cfg = config || loadConfig({});
-  const sim = new Sim();
+  const sim = new Sim({ maxPlayers: cfg.maxPlayers });
   const clients = new Map();      // ws -> { entry, ip, lastInputMs, inputCount }
   const reconnect = new ReconnectRegistry(60000);
   const connLimit = new ConnectionCap(cfg.maxPerIp);
@@ -89,10 +90,12 @@ export function createRoom(config) {
     const ip = rec.ip;
     if (!authLimit.try(ip, nowMs())) { ws.send(msgKick('rate limit')); ws.close(); return; }
     if (rec.entry) return; // already authed
-    // Match running + no free slots? Reject (match is full of humans + bots at maxPlayers).
-    if (sim.match.active && sim.freeSlots() <= 0) {
-      ws.send(msgKick('Server full')); ws.close(); return;
-    }
+    // Full check: mid-match uses free slots (humans + bots at maxPlayers);
+    // pre-match caps humans at maxPlayers so the lobby can't overfill.
+    const full = sim.match.active
+      ? sim.freeSlots() <= 0
+      : sim.humans.size >= cfg.maxPlayers;
+    if (full) { ws.send(msgKick('Server full')); ws.close(); return; }
     const rawName = sanitizeName(m.name) || 'Player';
     const name = dedupeName(rawName, activeNames());
     const animal = m.animal || 'FOX';
@@ -222,7 +225,15 @@ export function createRoom(config) {
 }
 
 export function main() {
-  const config = loadConfig();
+  // Read server/config.json from disk if it exists (resolved relative to this
+  // module via import.meta.url so cwd doesn't matter). Documented in README.
+  let fileConfig = null;
+  try {
+    fileConfig = JSON.parse(readFileSync(new URL('./config.json', import.meta.url), 'utf8'));
+  } catch (e) {
+    if (e.code !== 'ENOENT') console.warn('Could not parse server/config.json:', e.message);
+  }
+  const config = loadConfig({ file: fileConfig });
   const wss = new WebSocketServer({ host: config.host, port: config.port });
   const room = createRoom(config);
   let last = Date.now();

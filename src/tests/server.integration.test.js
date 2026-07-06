@@ -199,4 +199,24 @@ describe('dedicated server room (integration)', () => {
     // still authed — connection survived
     expect(room.sim.humans.size).toBe(1);
   });
+
+  it('rejects a lobby join when maxPlayers humans are already connected (pre-match cap)', () => {
+    const room = createRoom(loadConfig({ argv: ['--max-players', '2'], env: {} }));
+    const a = fakeSocket('1.1.1.1'); const b = fakeSocket('2.2.2.2'); const c = fakeSocket('3.3.3.3');
+    room.addClient(a); room.addClient(b); room.addClient(c);
+    room.handleMessage(a, JSON.stringify({ t: 'auth', name: 'A', animal: 'FOX', weapon: 'AR' }));
+    room.handleMessage(b, JSON.stringify({ t: 'auth', name: 'B', animal: 'FOX', weapon: 'AR' }));
+    // lobby now has 2 humans (== maxPlayers); third should be kicked
+    room.handleMessage(c, JSON.stringify({ t: 'auth', name: 'C', animal: 'FOX', weapon: 'AR' }));
+    expect(c._sent.some(m => m.t === 'kick' && /full/i.test(m.reason))).toBe(true);
+  });
+
+  it('auth with an invalid weapon id is rejected with an error (no welcome)', () => {
+    const room = createRoom(cfg());
+    const ws = fakeSocket();
+    room.addClient(ws);
+    room.handleMessage(ws, JSON.stringify({ t: 'auth', name: 'X', animal: 'FOX', weapon: 'NUKE' }));
+    expect(ws._sent.some(m => m.t === 'error')).toBe(true);
+    expect(ws._sent.some(m => m.t === 'welcome')).toBe(false);
+  });
 });

@@ -91,4 +91,9 @@ describe('loadConfig', () => {
   it('rejects maxPerIp below 1', () => {
     expect(() => loadConfig({ env: { AS_MAX_PER_IP: '0' } })).toThrow(/maxPerIp/i);
   });
+
+  it('merges a file object with unknown extra keys without breaking', () => {
+    const c = loadConfig({ file: { port: 7777, _comment: 'hi', extra: true } });
+    expect(c.port).toBe(7777);
+  });
 });
