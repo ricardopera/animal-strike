@@ -14,7 +14,7 @@ import { MAPS } from '../src/world/Maps.js';
 const MAP_IDS = new Set(MAPS.map(m => m.id));
 
 const HANDSHAKE_TIMEOUT_MS = 5000;
-const INPUT_RATE_LIMIT_PER_SEC = 70;
+const INPUT_RATE_LIMIT_PER_SEC = 120; // generous ceiling above 60Hz client send rate; prevents flood DoS without dropping legit inputs
 const TICK_HZ = 60;
 
 // Create a Room bound to a parsed config. Exposed for in-process testing; main()
@@ -168,6 +168,7 @@ export function createRoom(config) {
       rec.lastInputMs = t;
       if (rec.inputCount > INPUT_RATE_LIMIT_PER_SEC) return; // drop flood
       const c = clampInput(m);
+      rec.lastInputTick = tickCount; // track for stale-input expiry
       sim.setPlayerIntent(player.id, {
         forward: c.f, strafe: c.s, jump: c.j, sprint: c.sp, crouch: c.c,
         firing: c.fire, reloadRequested: c.reload, yaw: c.yaw, pitch: c.pitch,
@@ -206,6 +207,22 @@ export function createRoom(config) {
   // Advance the sim one tick; broadcast a snapshot every 3rd tick (~20Hz).
   function step(dt) {
     if (!sim.match.active) return;
+    // Expire stale client inputs: if a human hasn't sent an input in the last
+    // 200ms, reset their intent to zero. This prevents "ghost movement" when a
+    // key-release packet is dropped or the client tab is backgrounded — the
+    // server stops applying the last-known intent (e.g. forward=1) forever.
+    const STALE_TICKS = 12;
+    for (const e of clients.values()) {
+      if (!e.entry || !e.entry.player) continue;
+      const pid = e.entry.player.id;
+      if (e.lastInputTick !== undefined && (tickCount - e.lastInputTick) > STALE_TICKS) {
+        sim.setPlayerIntent(pid, {
+          forward: 0, strafe: 0, jump: false, sprint: false, crouch: false,
+          firing: false, reloadRequested: false,
+          yaw: e.entry.player.yaw, pitch: e.entry.player.pitch,
+        });
+      }
+    }
     sim.tick(dt);
     tickCount++;
     if (tickCount % 3 === 0) broadcast(msg('snapshot', sim.snapshot()));
