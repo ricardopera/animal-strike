@@ -77,3 +77,59 @@ describe('Sim (headless authoritative world)', () => {
     expect(sim.events.length).toBe(0);
   });
 });
+
+describe('Sim always-full + late-join bot takeover', () => {
+  it('startMatch fills to maxPlayers (humans + bots)', () => {
+    const sim = new Sim();
+    sim.startMatch('plaza', 25, 300);
+    expect(sim.players.length).toBe(6); // MAX_PLAYERS
+    expect(sim.bots.length).toBe(6);    // no humans
+  });
+
+  it('freeSlots() reports bot slots available for late join', () => {
+    const sim = new Sim();
+    sim.startMatch('plaza', 25, 300);
+    expect(sim.freeSlots()).toBe(6); // all slots are bots, no humans
+    // Simulate a late join via takeOverBot (the path the server uses mid-match):
+    sim.takeOverBot('Alice', 'FOX', 'AR');
+    expect(sim.freeSlots()).toBe(5); // one human now occupies a former bot slot
+  });
+
+  it('takeOverBot converts a bot slot to human control (match stays full)', () => {
+    const sim = new Sim();
+    sim.startMatch('plaza', 25, 300);
+    const botCountBefore = sim.bots.length;
+    const playerCountBefore = sim.players.length;
+    const bot = sim.bots[0];
+    const botScore = 3;
+    bot.score = 3;
+    const human = sim.takeOverBot('Alice', 'FOX', 'AR');
+    expect(human).toBe(bot);                    // same entity object
+    expect(sim.humans.has(human.id)).toBe(true);
+    expect(sim.bots.includes(human)).toBe(false);
+    expect(sim.bots.length).toBe(botCountBefore - 1);
+    expect(sim.players.length).toBe(playerCountBefore); // still full
+    expect(human.score).toBe(botScore);               // score retained
+    expect(human.name).toBe('Alice');                  // name updated
+  });
+
+  it('handleDisconnect immediately converts a human to a bot (match never short)', () => {
+    const sim = new Sim();
+    sim.startMatch('plaza', 25, 300);
+    const human = sim.takeOverBot('Bob', 'WOLF', 'AR');
+    const countBefore = sim.players.length;
+    expect(sim.humans.has(human.id)).toBe(true);
+    sim.handleDisconnect(human.id);
+    expect(sim.humans.has(human.id)).toBe(false);
+    expect(sim.bots.includes(human)).toBe(true);       // back to bot
+    expect(sim.players.length).toBe(countBefore);      // still full
+  });
+
+  it('freeSlots() is 0 when all slots are human', () => {
+    const sim = new Sim();
+    sim.startMatch('plaza', 25, 300);
+    // Take over every bot
+    while (sim.bots.length > 0) sim.takeOverBot('P' + sim.bots.length, 'FOX', 'AR');
+    expect(sim.freeSlots()).toBe(0);
+  });
+});

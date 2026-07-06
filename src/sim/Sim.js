@@ -121,6 +121,26 @@ export class Sim {
     this.events.push({ k: 'roster' });
   }
 
+  // Number of bot slots available for a late-joining human (maxPlayers minus humans).
+  freeSlots() { return MAX_PLAYERS - this.humans.size; }
+
+  // A late-joining human takes over an existing bot's entity: position, health,
+  // score, alive-state, and loadout stay; only control flips to human. Returns
+  // the (now-human) entity, or null if there is no bot to take over.
+  takeOverBot(name, animalId, weaponId) {
+    const bot = this.bots.shift();
+    if (!bot) return null;
+    bot.name = name;
+    if (animalId) bot.animalId = animalId;
+    if (weaponId) {
+      bot.loadout.primary = weaponId;
+      bot.weapon = new WeaponController(WEAPONS[weaponId]);
+      bot.weapon.fireCallback = () => bot.pendingShots.push({});
+    }
+    this.humans.set(bot.id, bot);
+    return bot;
+  }
+
   tick(dt) {
     if (!this.match.active) return;
     this.tickCount++;
