@@ -32,6 +32,7 @@ import { Sfx, resumeAudio } from '../audio/Audio.js';
 import { MusicPlayer } from '../audio/MusicPlayer.js';
 import { VoicePlayer } from '../audio/VoicePlayer.js';
 import { NetClient } from '../net/NetClient.js';
+import { reconcileSnapshot } from '../net/reconcile.js';
 import { setActiveSkin as setWeaponSkin } from '../player/WeaponParts.js';
 import { DEFAULT_SKIN } from '../config/WeaponSkins.js';
 import { RemoteView } from '../net/RemoteView.js';
@@ -513,44 +514,32 @@ export class Game {
       if (this.remoteView) this.remoteView.pushSnapshot(snap);
       const me = snap.players.find(p => p.id === this.mpLocalId);
       if (me && this.player) {
-        this.player.health = me.hp;
+        // Delegate to the tested pure helper (see src/net/reconcile.js). It
+        // handles respawn discontinuities, ammo anti-bounce, and position
+        // hard-snap-on-large-drift — the three sources of "can't move /
+        // rubber-band / ammo-flicker / ghost-movement" lag. We pass a view onto
+        // the player/weapon; primitive fields (yaw/pitch/alive/health) are
+        // copied back explicitly since they can't be mutated in place.
+        const r = reconcileSnapshot(
+          {
+            position: this.player.position,
+            velocity: this.player.velocity,
+            yaw: this.player.yaw, pitch: this.player.pitch,
+            alive: this.player.alive, health: this.player.health,
+            intent: this.player.intent,
+            weapon: this.weapon,
+          },
+          me
+        );
+        if (r.respawned) {
+          // yaw/pitch were overwritten in the helper's local state copy on
+          // respawn — copy them back to the player.
+          this.player.yaw = me.yaw;
+          this.player.pitch = me.pitch;
+        }
+        // alive/health are always written by the helper; mirror to the player.
         this.player.alive = me.alive;
-        // NOTE: do NOT set ammo/weapon HUD from the snapshot. The local weapon
-        // ticks every frame (see frameMultiplayer) and is the responsive source
-        // of truth for the ammo counter; the server's value is ~1 round trip
-        // stale, so overwriting the HUD here would make the counter flicker
-        // upward every snapshot while firing. Only resync ammo on a real
-        // discontinuity (large gap = respawn/reconnect/lost shots), where the
-        // server value is more trustworthy than the local prediction.
-        if (Math.abs(me.ammo - this.weapon.ammo) > 3) {
-          this.weapon.ammo = me.ammo;
-        }
-        // Naive prediction reconciliation: the local sim runs the SAME movement
-        // code as the server, so for a healthy connection the server's state
-        // matches the prediction. We must NOT overwrite local velocity/onGround
-        // each snapshot — the server's values are stale by one round trip, so
-        // doing so would fight the prediction (e.g. you press W, predict motion,
-        // then the snapshot yanks velocity back to ~0 → "can't accelerate").
-        // Only correct POSITION, and only on real drift. Local prediction stays
-        // authoritative for velocity/onGround so the controls stay responsive.
-        const dx = me.x - this.player.position.x;
-        const dy = me.y - this.player.position.y;
-        const dz = me.z - this.player.position.z;
-        const drift = Math.hypot(dx, dy, dz);
-        const DRIFT_THRESHOLD = 2.0; // meters before we force a snap
-        if (drift > DRIFT_THRESHOLD) {
-          // Large discrepancy (spawn, teleport, stuck-in-geometry, dropped
-          // packets, or accumulated prediction error): snap hard to the
-          // authoritative position. Velocity is left to the prediction.
-          this.player.position.set(me.x, me.y, me.z);
-        } else if (drift > 0.3) {
-          // Mild drift: nudge gently so it converges without a visible jump.
-          const k = 0.1;
-          this.player.position.x += dx * k;
-          this.player.position.y += dy * k;
-          this.player.position.z += dz * k;
-        }
-        // drift <= 0.3m: prediction is correct — leave position alone entirely.
+        this.player.health = me.hp;
       }
       this.match.timeLeft = snap.timeLeft;
     };
