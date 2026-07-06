@@ -5,8 +5,7 @@ import { WEAPON_SKINS, DEFAULT_SKIN } from '../config/WeaponSkins.js';
 
 const MODES = [
   { id: 'single', label: 'Single Player', desc: 'vs bots, local' },
-  { id: 'host',   label: 'Host',          desc: 'run a server + play' },
-  { id: 'join',   label: 'Join',          desc: 'connect to a host' },
+  { id: 'connect', label: 'Connect',      desc: 'join a server' },
 ];
 
 export class MainMenu {
@@ -18,7 +17,9 @@ export class MainMenu {
     this.selectedWeapon = localStorage.getItem('as_weapon') || 'AR';
     this.selectedMap = localStorage.getItem('as_map') || MAPS[0].id;
     this.rotateMaps = localStorage.getItem('as_rotate') !== 'false'; // default true
-    this.selectedMode = localStorage.getItem('as_mode') || 'single';
+    // Migrate any old 'host' selection to 'single' (host mode is removed).
+    const savedMode = localStorage.getItem('as_mode');
+    this.selectedMode = (savedMode === 'connect') ? 'connect' : 'single';
     this.joinAddress = localStorage.getItem('as_join_addr') || 'localhost:8080';
     this.selectedSkin = localStorage.getItem('as_skin') || DEFAULT_SKIN;
     this.el = document.createElement('div');
@@ -29,11 +30,10 @@ export class MainMenu {
     this.render();
     root.appendChild(this.el);
   }
+
   render() {
-    const isHost = this.selectedMode === 'host';
-    const isJoin = this.selectedMode === 'join';
-    const isMulti = isHost || isJoin;
-    const playLabel = isHost ? 'START SERVER + PLAY' : (isJoin ? 'CONNECT' : 'PLAY');
+    const isConnect = this.selectedMode === 'connect';
+    const playLabel = isConnect ? 'CONNECT' : 'PLAY';
     this.el.innerHTML = `
       <h1 style="font-size:44px;margin:0 0 8px;letter-spacing:2px;">ANIMAL<span style="color:#ffb84d">STRIKE</span></h1>
       <p style="opacity:.7;margin:0 0 18px;">Pick your animal and weapon</p>
@@ -79,30 +79,29 @@ export class MainMenu {
         </div>
       </div>
 
-      ${isJoin ? `
+      ${isConnect ? `
         <div style="margin-bottom:16px;display:flex;align-items:center;gap:8px;">
-          <label style="opacity:.7;font-size:14px;">Host address:</label>
+          <label style="opacity:.7;font-size:14px;">Server address:</label>
           <input id="join-addr" value="${this.joinAddress}" placeholder="ip:port"
             style="background:#222;color:#fff;border:1px solid #555;border-radius:6px;padding:8px 12px;font-size:14px;width:220px;">
         </div>` : ''}
 
-      ${!isMulti ? `
-        <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;justify-content:center;max-width:820px;">
-          ${MAPS.map(m => `
-            <button data-map="${m.id}" style="
-              background:${this.selectedMap===m.id?'#ffb84d':'#222'};color:#fff;border:none;
-              padding:10px 16px;border-radius:8px;cursor:pointer;text-align:left;max-width:200px;">
-              ${m.name}<br><small style="opacity:.6">${m.desc}</small>
-            </button>`).join('')}
-        </div>
+      <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;justify-content:center;max-width:820px;">
+        ${MAPS.map(m => `
+          <button data-map="${m.id}" style="
+            background:${this.selectedMap===m.id?'#ffb84d':'#222'};color:#fff;border:none;
+            padding:10px 16px;border-radius:8px;cursor:pointer;text-align:left;max-width:200px;">
+            ${m.name}<br><small style="opacity:.6">${m.desc}</small>
+          </button>`).join('')}
+      </div>
+
+      ${!isConnect ? `
         <label style="display:flex;align-items:center;gap:8px;margin-bottom:20px;color:#fff;font-size:14px;cursor:pointer;">
           <input type="checkbox" id="rotate-maps" ${this.rotateMaps?'checked':''} style="width:18px;height:18px;">
           <span>🔄 Rotate maps after each match</span>
         </label>` : `
         <div style="margin-bottom:16px;opacity:.7;font-size:13px;max-width:560px;text-align:center;">
-          ${isHost
-            ? 'Host mode: run <code style="background:#222;padding:2px 6px;border-radius:4px;">npm run host</code> in the project folder, then press START. Share your IP:8080 with friends.'
-            : 'Join mode: enter the host\'s address (e.g. 192.168.1.5:8080). The host picks the map.'}
+          Connect mode: enter the server's address (e.g. 192.168.1.5:8080). Anyone in the lobby can pick the map and start the match.
         </div>`}
 
       <button id="play-btn" style="background:#4dffb8;color:#102020;border:none;padding:14px 48px;
