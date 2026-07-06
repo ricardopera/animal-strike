@@ -1,0 +1,13 @@
+{
+  "_comment": "Copy to config.json and edit. All fields optional; env vars (AS_*) and CLI flags override these.",
+  "host": "0.0.0.0",
+  "port": 8080,
+  "maxPlayers": 6,
+  "minPlayers": 2,
+  "map": "plaza",
+  "fragTarget": 25,
+  "matchSeconds": 300,
+  "autoStart": false,
+  "password": "",
+  "maxPerIp": 4
+}
