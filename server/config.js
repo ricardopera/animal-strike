@@ -12,6 +12,9 @@ const DEFAULTS = {
   password: '',
   rateLimit: { perWindow: 5, windowMs: 10000 },
   maxPerIp: 4,
+  tls: false,
+  tlsCert: '',
+  tlsKey: '',
 };
 
 const MAP_IDS = new Set(MAPS.map(m => m.id));
@@ -47,6 +50,9 @@ export function loadConfig({ file = null, env = process.env, argv = process.argv
   if (env.AS_AUTO_START !== undefined) envOverrides.autoStart = asBool(env.AS_AUTO_START);
   if (env.AS_PASSWORD !== undefined) envOverrides.password = env.AS_PASSWORD;
   if (env.AS_MAX_PER_IP !== undefined) envOverrides.maxPerIp = parseInt(env.AS_MAX_PER_IP, 10);
+  if (env.AS_TLS !== undefined) envOverrides.tls = asBool(env.AS_TLS);
+  if (env.AS_TLS_CERT !== undefined) envOverrides.tlsCert = env.AS_TLS_CERT;
+  if (env.AS_TLS_KEY !== undefined) envOverrides.tlsKey = env.AS_TLS_KEY;
 
   const cli = parseArgv(argv);
   const merged = { ...DEFAULTS, ...(file || {}), ...envOverrides, ...cli };

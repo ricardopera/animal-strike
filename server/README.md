@@ -28,6 +28,52 @@ $EDITOR server/config.json
 npm run server
 ```
 
+## TLS / WSS (REQUIRED for HTTPS-hosted clients like GitHub Pages)
+
+Browsers block insecure `ws://` connections from HTTPS pages (Mixed Content). The live game at `https://ricardopera.github.io/animal-strike/` is HTTPS, so clients **must** connect via `wss://`. The server supports this natively with TLS certs.
+
+### Quick setup (self-signed cert)
+
+```bash
+# 1. Generate a self-signed cert (your server's public IP as the hostname)
+bash scripts/generate-cert.sh 147.15.74.204
+
+# 2. Start the server with TLS enabled
+AS_PORT=9000 \
+AS_TLS=true \
+AS_TLS_CERT=server/cert.pem \
+AS_TLS_KEY=server/key.pem \
+npm run server
+```
+
+The browser will show a security warning for self-signed certs. Visit `https://147.15.74.204:9000` in the browser first, click "Advanced → Proceed", then the `wss://` connection will work.
+
+### Production setup (real certificate via domain name)
+
+For no warnings, get a real cert (e.g. Let's Encrypt via a domain pointing to your server):
+
+```bash
+# With certbot
+sudo certbot certonly --standalone -d animalstrike.example.com
+# Certs at: /etc/letsencrypt/live/animalstrike.example.com/fullchain.pem + privkey.pem
+
+AS_PORT=443 \
+AS_TLS=true \
+AS_TLS_CERT=/etc/letsencrypt/live/animalstrike.example.com/fullchain.pem \
+AS_TLS_KEY=/etc/letsencrypt/live/animalstrike.example.com/privkey.pem \
+npm run server
+```
+
+Clients then connect with `wss://animalstrike.example.com` (no port needed for 443).
+
+### TLS config reference
+
+| Setting | Env | Default | Notes |
+|---|---|---|---|
+| Enable TLS | `AS_TLS` | `false` | `true` to wrap the WebSocket server in HTTPS |
+| Cert path | `AS_TLS_CERT` | `""` | Path to PEM certificate file |
+| Key path | `AS_TLS_KEY` | `""` | Path to PEM private key file |
+
 On startup it prints the address to share:
 
 ```

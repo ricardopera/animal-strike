@@ -1,5 +1,6 @@
 import { WebSocketServer } from 'ws';
 import { readFileSync } from 'node:fs';
+import { createServer as createHttpsServer } from 'node:https';
 import { Sim } from '../src/sim/Sim.js';
 import { msg, parse } from '../src/sim/protocol.js';
 import {
@@ -251,7 +252,22 @@ export function main() {
     if (e.code !== 'ENOENT') console.warn('Could not parse server/config.json:', e.message);
   }
   const config = loadConfig({ file: fileConfig });
-  const wss = new WebSocketServer({ host: config.host, port: config.port });
+
+  // Create the WebSocket server. When config.tls is true, wrap in an HTTPS
+  // server with the configured cert/key so browsers can connect via wss://
+  // (required when the game page is served over HTTPS, e.g. GitHub Pages).
+  let wss;
+  if (config.tls && config.tlsCert && config.tlsKey) {
+    const httpsServer = createHttpsServer({
+      cert: readFileSync(config.tlsCert),
+      key: readFileSync(config.tlsKey),
+    });
+    httpsServer.listen(config.port, config.host);
+    wss = new WebSocketServer({ server: httpsServer });
+    console.log(`TLS enabled: cert=${config.tlsCert} key=${config.tlsKey}`);
+  } else {
+    wss = new WebSocketServer({ host: config.host, port: config.port });
+  }
   // Handle bind failures (port in use / permission denied) with a clear message
   // instead of an unhandled 'error' event + stack trace.
   wss.on('error', (err) => {
@@ -325,10 +341,15 @@ export function main() {
     ws.on('error', () => room.handleDisconnect(ws));
   });
 
+  const proto = config.tls ? 'wss' : 'ws';
   const display = config.host === '0.0.0.0' ? '<this-machine-ip>' : config.host;
-  console.log(`AnimalStrike dedicated server listening on ws://${config.host}:${config.port}`);
-  console.log(`Players connect to: ws://<your-ip>:${config.port}  (LAN/public: ${display})`);
-  console.log(`Config: maxPlayers=${config.maxPlayers} map=${config.map} fragTarget=${config.fragTarget} matchSeconds=${config.matchSeconds} autoStart=${config.autoStart}`);
+  console.log(`AnimalStrike dedicated server listening on ${proto}://${config.host}:${config.port}`);
+  console.log(`Players connect to: ${proto}://<your-ip>:${config.port}  (LAN/public: ${display})`);
+  if (!config.tls) {
+    console.log(`NOTE: plain ws:// only. For HTTPS-hosted clients (GitHub Pages), enable TLS:`);
+    console.log(`  AS_TLS=true AS_TLS_CERT=cert.pem AS_TLS_KEY=key.pem npm run server`);
+  }
+  console.log(`Config: maxPlayers=${config.maxPlayers} map=${config.map} fragTarget=${config.fragTarget} matchSeconds=${config.matchSeconds} autoStart=${config.autoStart} tls=${config.tls}`);
 }
 
 // Run main only when executed directly (`node server/index.js`), not when imported.
