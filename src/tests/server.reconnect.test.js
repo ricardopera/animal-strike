@@ -51,4 +51,21 @@ describe('ReconnectRegistry', () => {
     expect(r.verify('H4', a, 20).ok).toBe(false); // old token invalid
     expect(r.verify('H4', b, 20).ok).toBe(true);
   });
+
+  it('refresh extends expiry without changing the token', () => {
+    const r = new ReconnectRegistry(60000);
+    const { token: t1 } = r.mint('H5', 'e5', 0);       // expires at 60000
+    const res = r.refresh('H5', 'e5', 50000);           // refresh at t=50s → expires at 110000
+    expect(res.token).toBe(t1);                         // same token retained
+    expect(r.verify('H5', t1, 60000).ok).toBe(true);    // would have expired under original mint; now valid
+    expect(r.verify('H5', t1, 105000).ok).toBe(true);   // valid under refreshed expiry
+    expect(r.verify('H5', t1, 120000).ok).toBe(false);  // expired
+  });
+
+  it('refresh mints a new entry when none exists', () => {
+    const r = new ReconnectRegistry(60000);
+    const res = r.refresh('H6', 'e6', 0);
+    expect(res.token).toBeTruthy();
+    expect(r.verify('H6', res.token, 100).ok).toBe(true);
+  });
 });

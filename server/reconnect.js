@@ -16,6 +16,15 @@ export class ReconnectRegistry {
     return { token };
   }
 
+  // Refresh an entry's expiry without changing its token. If no entry exists,
+  // mint a fresh one. Used on disconnect: the client keeps the token it got at
+  // auth (welcome), and we just extend the grace window from the disconnect time.
+  refresh(playerId, entityId, nowMs) {
+    const existing = this._entries.get(playerId);
+    if (existing) { existing.expiresAt = nowMs + this.graceMs; return { token: existing.token }; }
+    return this.mint(playerId, entityId, nowMs);
+  }
+
   // Returns { ok: true, entityId } on a live match, or { ok: false }.
   verify(playerId, token, nowMs) {
     const e = this._entries.get(playerId);

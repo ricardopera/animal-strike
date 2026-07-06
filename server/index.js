@@ -179,7 +179,7 @@ export function createRoom(config) {
     if (rec.handshakeTimer) clearTimeout(rec.handshakeTimer);
     if (rec.entry && rec.entry.player) {
       const pid = rec.entry.player.id;
-      reconnect.mint(pid, pid, nowMs()); // remember for 60s; entity becomes bot below
+      reconnect.refresh(pid, pid, nowMs()); // extend grace from disconnect; keep the welcome token
       sim.handleDisconnect(pid);         // immediately convert to bot (match stays full)
       broadcast(msg('roster', { roster: roster() }));
     }
