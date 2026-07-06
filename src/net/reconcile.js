@@ -19,7 +19,7 @@
 //   intent so the prediction resumes cleanly (otherwise stale velocity/intent
 //   from before death carry into the respawn → "moves without command").
 
-export const DRIFT_SNAP_THRESHOLD = 3.0; // meters before a hard position snap
+export const DRIFT_SNAP_THRESHOLD = 20.0; // meters before a hard position snap (increased from 3.0 to avoid snapping during normal prediction lead at sprint speed)
 export const AMMO_RESYNC_GAP = 3;        // server-has-more gap that triggers ammo resync
 
 // Mutates `state` (the local predicted player + weapon) according to one

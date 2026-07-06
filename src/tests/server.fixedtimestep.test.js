@@ -25,6 +25,14 @@ describe('server sim uses fixed-timestep integration (Bug 1: movement loop)', ()
     const a = room.sim.addHuman('A', 'FOX', 'AR');
     const b = standalone.addHuman('A', 'FOX', 'AR');
     b.position.copy(a.position);
+
+    // Clear bots from both sims so they can't randomly kill/shoot the humans
+    // (bot AI has randomness that would cause divergence between the two sims).
+    room.sim.bots.length = 0;
+    room.sim.players = room.sim.players.filter(p => room.sim.humans.has(p.id));
+    standalone.bots.length = 0;
+    standalone.players = standalone.players.filter(p => standalone.humans.has(p.id));
+
     room.sim.setPlayerIntent(a.id, { forward: 1, strafe: 0, jump: false, sprint: true, crouch: false, firing: false, reloadRequested: false, yaw: 0, pitch: 0 });
     standalone.setPlayerIntent(b.id, { forward: 1, strafe: 0, jump: false, sprint: true, crouch: false, firing: false, reloadRequested: false, yaw: 0, pitch: 0 });
 

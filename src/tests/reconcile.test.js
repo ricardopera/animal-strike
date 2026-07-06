@@ -27,19 +27,19 @@ describe('reconcileSnapshot — movement loop (Bug 1)', () => {
 
   it('hard-snaps on large drift (real desync: teleport/wall-clip/packet loss)', () => {
     const state = makeState({ position: { x: 0, y: 0, z: 0 } });
-    const me = { x: 10, y: 0, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, alive: true, hp: 100, ammo: 30 };
+    const me = { x: 25, y: 0, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, alive: true, hp: 100, ammo: 30 };
     const r = reconcileSnapshot(state, me);
     expect(r.snapped).toBe(true);
-    expect(state.position.x).toBe(10);
+    expect(state.position.x).toBe(25);
     // Velocity re-derived from server post-snap so prediction is stable.
     expect(state.velocity.x).toBe(0);
   });
 
   it('never applies a continuous lerp — drift just under threshold leaves position alone', () => {
     const state = makeState({ position: { x: 0, y: 0, z: 0 } });
-    const me = { x: 2.9, y: 0, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, alive: true, hp: 100, ammo: 30 };
+    const me = { x: 19.9, y: 0, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, alive: true, hp: 100, ammo: 30 };
     reconcileSnapshot(state, me);
-    // drift 2.9 < 3.0 threshold → no change (would've been nudged under the old code)
+    // drift 19.9 < 20.0 threshold → no change
     expect(state.position.x).toBe(0);
   });
 });
