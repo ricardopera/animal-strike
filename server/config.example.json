@@ -9,5 +9,6 @@
   "matchSeconds": 300,
   "autoStart": false,
   "password": "",
+  "rateLimit": { "perWindow": 5, "windowMs": 10000 },
   "maxPerIp": 4
 }

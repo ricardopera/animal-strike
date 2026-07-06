@@ -80,4 +80,15 @@ describe('loadConfig', () => {
     const c = loadConfig({ argv: ['--max-players', '4', '--min-players', '9'] });
     expect(c.minPlayers).toBe(4);
   });
+
+  it('does not share the rateLimit object across loads (no mutation poisoning)', () => {
+    const a = loadConfig({});
+    const b = loadConfig({});
+    a.rateLimit.perWindow = 999;
+    expect(b.rateLimit.perWindow).toBe(5); // unchanged — not the shared default
+  });
+
+  it('rejects maxPerIp below 1', () => {
+    expect(() => loadConfig({ env: { AS_MAX_PER_IP: '0' } })).toThrow(/maxPerIp/i);
+  });
 });

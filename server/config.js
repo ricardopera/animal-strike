@@ -50,6 +50,8 @@ export function loadConfig({ file = null, env = process.env, argv = process.argv
 
   const cli = parseArgv(argv);
   const merged = { ...DEFAULTS, ...(file || {}), ...envOverrides, ...cli };
+  // Deep-clone rateLimit so the returned object never shares a reference with DEFAULTS.
+  merged.rateLimit = { ...merged.rateLimit };
 
   // minPlayers never exceeds maxPlayers.
   if (merged.minPlayers > merged.maxPlayers) merged.minPlayers = merged.maxPlayers;
@@ -65,4 +67,5 @@ function validate(c) {
   if (!MAP_IDS.has(c.map)) throw new Error(`Unknown map id: ${c.map}`);
   if (!Number.isInteger(c.fragTarget) || c.fragTarget < 1) throw new Error(`Invalid fragTarget: ${c.fragTarget}`);
   if (!Number.isInteger(c.matchSeconds) || c.matchSeconds < 1) throw new Error(`Invalid matchSeconds: ${c.matchSeconds}`);
+  if (!Number.isInteger(c.maxPerIp) || c.maxPerIp < 1) throw new Error(`Invalid maxPerIp: ${c.maxPerIp}`);
 }
