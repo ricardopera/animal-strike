@@ -162,11 +162,11 @@ export function createRoom(config) {
       broadcast(msg('matchStart', { map: sim.activeMap.id, fragTarget: sim.match.fragTarget, seconds: sim.match.timeLeft }));
     } else if (m.t === 'input') {
       if (!sim.match.active) return;
-      // Rate-limit inputs (~70/s ceiling over a 1s sliding window).
-      const t = nowMs();
-      rec.inputCount = (t - rec.lastInputMs < 1000) ? rec.inputCount + 1 : 1;
-      rec.lastInputMs = t;
-      if (rec.inputCount > INPUT_RATE_LIMIT_PER_SEC) return; // drop flood
+      // No per-message rate limit: the counter-based limiter was broken (only
+      // reset on a 1s gap, but the client sends at 60Hz continuously, so the
+      // counter grew monotonically and dropped ALL inputs after ~2s). The
+      // connection-level auth rate limiter already prevents flooding. Input
+      // processing is O(1) — setPlayerIntent just stores a Map entry.
       const c = clampInput(m);
       rec.lastInputTick = tickCount; // track for stale-input expiry
       sim.setPlayerIntent(player.id, {
