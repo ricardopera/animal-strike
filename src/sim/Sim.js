@@ -264,6 +264,7 @@ export class Sim {
       yaw: p.yaw, pitch: p.pitch, hp: Math.round(p.health),
       wpn: p.loadout.primary, ammo: p.weapon.ammo, score: p.score, alive: p.alive,
       animal: p.animalId, name: p.name || p.id, isBot: !this.humans.has(p.id),
+      onGround: !!p.onGround,
     }));
     const events = this.events; this.events = [];
     return { tick: this.tickCount, players, events, timeLeft: this.match.timeLeft };

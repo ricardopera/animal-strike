@@ -45,6 +45,7 @@ const _shotDir = new THREE.Vector3();
 const _shotMuzzle = new THREE.Vector3();
 const _pelletDir = new THREE.Vector3();
 const _shotMuzzle2 = new THREE.Vector3();
+const _shotEnd = new THREE.Vector3();
 const _shotFar = new THREE.Vector3();
 
 // Build a vertical gradient sky texture from 4 stops [zenith, mid, haze, horizon].
@@ -500,6 +501,10 @@ export class Game {
       this.player.view.setWeapon(weaponId);
       this.player.view.setVisible(false);
       this.weapon = new WeaponController(WEAPONS[weaponId]);
+      // Local shots queue here so fireOneShot can render immediate muzzle/tracer
+      // feedback in the MP frame loop (the server still decides damage).
+      this.pendingShots = [];
+      this.weapon.fireCallback = () => this.pendingShots.push({});
       this.input.requestPointerLock();
       this.remoteView = new RemoteView(this.scene);
       this.mpActive = true;
@@ -509,11 +514,38 @@ export class Game {
       const me = snap.players.find(p => p.id === this.mpLocalId);
       if (me && this.player) {
         this.player.health = me.hp;
-        this.player.position.x += (me.x - this.player.position.x) * 0.15;
-        this.player.position.y += (me.y - this.player.position.y) * 0.15;
-        this.player.position.z += (me.z - this.player.position.z) * 0.15;
         this.player.alive = me.alive;
         this.hud.setAmmo(me.ammo, this.weapon.def.mag);
+        // Naive prediction reconciliation: the local sim runs the SAME movement
+        // code as the server, so for a healthy connection the server's position
+        // matches the prediction and we should NOT touch it — lerping every
+        // snapshot fights the prediction and corrupts velocity, which is exactly
+        // the "can't move / rubber-banding" bug. Only correct real DRIFT (>
+        // threshold), and when correcting, snap hard rather than bleed in over
+        // many frames. Also sync onGround so prediction stays consistent.
+        if (typeof me.onGround === 'boolean') this.player.onGround = me.onGround;
+        if (typeof me.vx === 'number') {
+          // Server-authoritative velocity keeps bhop/slide/wallrun honest.
+          this.player.velocity.set(me.vx, me.vy, me.vz);
+        }
+        const dx = me.x - this.player.position.x;
+        const dy = me.y - this.player.position.y;
+        const dz = me.z - this.player.position.z;
+        const drift = Math.hypot(dx, dy, dz);
+        const DRIFT_THRESHOLD = 2.0; // meters before we force a snap
+        if (drift > DRIFT_THRESHOLD) {
+          // Large discrepancy (spawn, teleport, stuck-in-geometry, dropped
+          // packets): snap hard to the authoritative position.
+          this.player.position.set(me.x, me.y, me.z);
+        } else if (drift > 0.3) {
+          // Mild drift: nudge a little so it converges without a visible jump.
+          // Much gentler than the old 0.15/frame lerp that ran every snapshot.
+          const k = 0.05;
+          this.player.position.x += dx * k;
+          this.player.position.y += dy * k;
+          this.player.position.z += dz * k;
+        }
+        // drift <= 0.3m: prediction is correct — leave position alone entirely.
       }
       this.match.timeLeft = snap.timeLeft;
     };
@@ -630,36 +662,60 @@ export class Game {
     }
     this.player.intent = this.input.buildIntent();
 
-    // Send input to host (absolute yaw/pitch + movement intent).
+    // Capture this frame's firing/reload intent BEFORE sending (so the server
+    // and the local weapon see the same state this frame).
+    const firing = this.match.active && this.player.alive && this.player.intent.firing;
+    const reloadReq = this.input.consumeReloadRequest();
+
+    // Send input to server (absolute yaw/pitch + movement intent).
     if (this.match.active && this.player.alive) {
       this.netClient.sendInput({
         forward: this.player.intent.forward, strafe: this.player.intent.strafe,
         jump: this.player.intent.jump, sprint: this.player.intent.sprint,
         crouch: this.player.intent.crouch, firing: this.player.intent.firing,
-        reloadRequested: this.input.consumeReloadRequest(),
+        reloadRequested: reloadReq,
         yaw: this.player.yaw, pitch: this.player.pitch,
       });
     }
 
-    // Naive prediction: run local movement for responsiveness.
+    // Local sim (prediction): advance BOTH movement and the local weapon so the
+    // viewmodel animates, ammo/reload tick locally, and queued shots produce
+    // immediate muzzle/tracer/recoil feedback. The server still decides damage
+    // authoritatively (its own WeaponController enforces fire-rate), but the
+    // player sees/hears their shot the frame they click — no round-trip wait.
     if (this.match.active && this.player.alive) {
-      this.fixed.update(realDt, (dt) => tickMovement(this.player, dt, this.colliders));
+      this.fixed.update(realDt, (dt) => {
+        tickMovement(this.player, dt, this.colliders);
+        this.weapon.update(dt, firing, reloadReq);
+      });
+      // Resolve locally-queued shots for instant visual/audio feedback. We don't
+      // apply damage here (server is authoritative) — just FX + a hitmarker off
+      // the local raycast for responsiveness; the server's result wins.
+      for (const _shot of this.pendingShots) this.fireOneShotLocalFx(this.player, this.weapon);
+      this.pendingShots.length = 0;
+    } else {
+      // Still tick the weapon out-of-match so reload animations finish.
+      this.weapon.update(realDt, false, reloadReq);
     }
 
     // Render remote players from interpolated snapshots.
     if (this.remoteView) {
       this.remoteView.update(this.mpLocalId, realDt);
       for (const ev of this.remoteView.drainEvents()) {
+        // Skip our own shots — we already spawned local FX above for immediacy;
+        // a second tracer from the snapshot would double up.
         if (ev.k === 'shot') {
+          if (ev.shooter === this.mpLocalId) continue;
           this.tracers.spawn(new THREE.Vector3(ev.ox, ev.oy, ev.oz), new THREE.Vector3(ev.dx, ev.dy, ev.dz));
           this.flashes.spawn(new THREE.Vector3(ev.ox + ev.dx * 0.6, ev.oy + ev.dy * 0.6, ev.oz + ev.dz * 0.6));
-        } else if (ev.k === 'hit' && ev.shooter === this.mpLocalId) {
-          this.hud.showHitmarker(false);
+        } else if (ev.k === 'hit') {
+          // Authoritative hit marker from the server: only show for our shots.
+          if (ev.shooter === this.mpLocalId) this.hud.showHitmarker(false);
         } else if (ev.k === 'kill') {
           const s = (this.remoteView.snapshots.at(-1)?.players || []).find(p => p.id === ev.shooter);
           const v = (this.remoteView.snapshots.at(-1)?.players || []).find(p => p.id === ev.victim);
           this.hud.addKill(`${s ? s.name : '?'} ${ev.hs ? 'headshotted' : 'fragged'} ${v ? v.name : '?'}`);
-          Sfx.kill();
+          if (ev.shooter === this.mpLocalId) Sfx.kill();
         }
       }
     }
@@ -887,6 +943,58 @@ export class Game {
       shooter.yaw += (Math.random() - 0.5) * def.recoil.horizontal;
       shooter.pitch = Math.min(shooter.pitch, Math.PI / 2 - 0.01);
     }
+  }
+
+  // Multiplayer local-fire feedback: identical FX to fireOneShot (muzzle flash,
+  // shot sound, viewmodel kick, recoil, tracer to the wall impact, impact spark)
+  // but applies NO damage — the server is authoritative and will send its own
+  // hit/kill events via the snapshot. This exists so pulling the trigger feels
+  // instant instead of waiting a full network round trip for the first feedback.
+  // (We only fire it for the local player, so no shooter/bot branch is needed.)
+  fireOneShotLocalFx(shooter, weapon) {
+    const def = weapon.def;
+    let origin, baseDir;
+    if (this.firstPersonView.group.visible) {
+      const m = this.firstPersonView.getMuzzleWorldPosition(_shotOrigin, _shotDir);
+      origin = _shotOrigin.copy(m.pos);
+      baseDir = _shotDir.copy(m.dir);
+      this.firstPersonView.triggerKick(1);
+    } else {
+      origin = _shotOrigin.set(shooter.position.x, shooter.position.y + M.EYE_HEIGHT, shooter.position.z);
+      baseDir = _shotDir.set(
+        -Math.sin(shooter.yaw) * Math.cos(shooter.pitch),
+         Math.sin(shooter.pitch),
+        -Math.cos(shooter.yaw) * Math.cos(shooter.pitch)
+      );
+    }
+    _shotMuzzle.copy(origin).addScaledVector(baseDir, 0.6);
+    this.flashes.spawn(_shotMuzzle);
+    this.playShootSfx(def.id);
+
+    const hSpeed = Math.hypot(shooter.velocity.x, shooter.velocity.z);
+    let spread = def.spread;
+    if (def.moveSpreadPenalty) { spread += hSpeed * def.moveSpreadPenalty; if (!shooter.onGround) spread += def.moveSpreadPenalty * 8; }
+    const pellets = def.pellets || 1;
+    const MAX = 500;
+    for (let p = 0; p < pellets; p++) {
+      _pelletDir.copy(baseDir);
+      _pelletDir.x += (Math.random() - 0.5) * spread;
+      _pelletDir.y += (Math.random() - 0.5) * spread;
+      _pelletDir.z += (Math.random() - 0.5) * spread;
+      _pelletDir.normalize();
+      // Trace only to the wall for the tracer endpoint + impact spark. Remote
+      // players are interpolated and the server decides hits, so we don't test
+      // against them here (avoids misleading local hitmarkers on lag).
+      const wallHit = this.colliders.raycast(origin, _pelletDir, MAX);
+      const endPoint = wallHit ? wallHit.point : _shotEnd.copy(origin).addScaledVector(_pelletDir, MAX);
+      _shotMuzzle2.copy(origin).addScaledVector(_pelletDir, 0.6);
+      this.tracers.spawn(_shotMuzzle2, endPoint);
+      if (wallHit) this.sparks.spawn(wallHit.point, new THREE.Vector3(0, 1, 0), 0xffaa22);
+    }
+    // Recoil (local player only — same as fireOneShot).
+    shooter.pitch += def.recoil.vertical * (Math.random() * 0.5 + 0.5);
+    shooter.yaw += (Math.random() - 0.5) * def.recoil.horizontal;
+    shooter.pitch = Math.min(shooter.pitch, Math.PI / 2 - 0.01);
   }
 
   playShootSfx(weaponId) {
