@@ -517,17 +517,13 @@ export class Game {
         this.player.alive = me.alive;
         this.hud.setAmmo(me.ammo, this.weapon.def.mag);
         // Naive prediction reconciliation: the local sim runs the SAME movement
-        // code as the server, so for a healthy connection the server's position
-        // matches the prediction and we should NOT touch it — lerping every
-        // snapshot fights the prediction and corrupts velocity, which is exactly
-        // the "can't move / rubber-banding" bug. Only correct real DRIFT (>
-        // threshold), and when correcting, snap hard rather than bleed in over
-        // many frames. Also sync onGround so prediction stays consistent.
-        if (typeof me.onGround === 'boolean') this.player.onGround = me.onGround;
-        if (typeof me.vx === 'number') {
-          // Server-authoritative velocity keeps bhop/slide/wallrun honest.
-          this.player.velocity.set(me.vx, me.vy, me.vz);
-        }
+        // code as the server, so for a healthy connection the server's state
+        // matches the prediction. We must NOT overwrite local velocity/onGround
+        // each snapshot — the server's values are stale by one round trip, so
+        // doing so would fight the prediction (e.g. you press W, predict motion,
+        // then the snapshot yanks velocity back to ~0 → "can't accelerate").
+        // Only correct POSITION, and only on real drift. Local prediction stays
+        // authoritative for velocity/onGround so the controls stay responsive.
         const dx = me.x - this.player.position.x;
         const dy = me.y - this.player.position.y;
         const dz = me.z - this.player.position.z;
@@ -535,12 +531,12 @@ export class Game {
         const DRIFT_THRESHOLD = 2.0; // meters before we force a snap
         if (drift > DRIFT_THRESHOLD) {
           // Large discrepancy (spawn, teleport, stuck-in-geometry, dropped
-          // packets): snap hard to the authoritative position.
+          // packets, or accumulated prediction error): snap hard to the
+          // authoritative position. Velocity is left to the prediction.
           this.player.position.set(me.x, me.y, me.z);
         } else if (drift > 0.3) {
-          // Mild drift: nudge a little so it converges without a visible jump.
-          // Much gentler than the old 0.15/frame lerp that ran every snapshot.
-          const k = 0.05;
+          // Mild drift: nudge gently so it converges without a visible jump.
+          const k = 0.1;
           this.player.position.x += dx * k;
           this.player.position.y += dy * k;
           this.player.position.z += dz * k;
@@ -747,9 +743,22 @@ export class Game {
     else this.renderer.render(this.scene, this.camera);
 
     this.hud.setHealth(this.player.health);
+    this.hud.setAmmo(this.weapon.ammo, this.weapon.def.mag);
+    this.hud.setReloadProgress(this.weapon.reloading ? this.weapon.reloadProgress : 1);
     this.hud.setTime(Math.ceil(this.match.timeLeft));
     const speed = Math.hypot(this.player.velocity.x, this.player.velocity.z);
     this.crosshair.setSpread(14 + speed * 2);
+    // Sprint FOV kick — mirrors the single-player feel so sprinting widens FOV.
+    const targetFov = this.baseFov + (this.player.intent.sprint && this.player.velocity.lengthSq() > 4 ? 8 : 0);
+    if (Math.abs(this.camera.fov - targetFov) > 0.05) {
+      this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, realDt * 10);
+      this.camera.updateProjectionMatrix();
+    }
+    // Low-HP vignette — same as single player.
+    if (this.vignetteEl) {
+      const intensity = this.player.alive && this.player.health < 30 ? (30 - this.player.health) / 30 : 0;
+      this.vignetteEl.style.boxShadow = `inset 0 0 200px 60px rgba(180,0,0,${(intensity * 0.6).toFixed(3)})`;
+    }
     this.scoreboard.update(this.remoteView ? (this.remoteView.snapshots.at(-1)?.players || []).map(p => ({ id: p.id, name: p.name, animalId: p.animal, score: p.score, deaths: 0, isLocal: p.id === this.mpLocalId, alive: p.alive })) : []);
   }
 

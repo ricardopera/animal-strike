@@ -43,10 +43,21 @@ export class RemoteView {
     if (this.snapshots.length < 2) return;
     const now = performance.now() / 1000;
     const target = now - this.renderDelay;
-    // find the two snapshots bracketing `target`
-    let a = this.snapshots[this.snapshots.length - 2];
-    let b = this.snapshots[this.snapshots.length - 1];
-    if (target < a.t) { target && (this.renderDelay = Math.max(0.05, now - a.t)); } // clamp forward
+    // Find the pair of snapshots that bracket the render-delay target time.
+    // Snapshots are pushed in order, so walk from newest backward. `a` is the
+    // snapshot at-or-before `target`, `b` is the one after it; we then lerp
+    // a->b by the fractional position of `target` between them. This is what
+    // makes remote players move SMOOTHLY instead of snapping each snapshot.
+    let a = null, b = null;
+    for (let i = this.snapshots.length - 1; i > 0; i--) {
+      if (this.snapshots[i - 1].t <= target) { a = this.snapshots[i - 1]; b = this.snapshots[i]; break; }
+    }
+    if (!a) {
+      // Target is older than our oldest buffered snapshot (big lag spike / stall):
+      // fall back to the two newest and clamp to the start so we don't extrapolate.
+      a = this.snapshots[this.snapshots.length - 2];
+      b = this.snapshots[this.snapshots.length - 1];
+    }
     const span = Math.max(0.001, b.t - a.t);
     const alpha = Math.max(0, Math.min(1, (target - a.t) / span));
     for (const p of b.players) {
