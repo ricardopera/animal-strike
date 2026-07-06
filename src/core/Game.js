@@ -470,7 +470,12 @@ export class Game {
     this.cleanupMultiplayer();
 
     // Connect-only: every multiplayer client joins the dedicated server by address.
-    const url = `ws://${address}`;
+    // Auto-detect protocol: if the page is HTTPS (e.g. GitHub Pages), browsers
+    // block insecure ws:// connections (Mixed Content). Use wss:// for HTTPS pages,
+    // ws:// for HTTP (localhost dev). The server must support WSS when deployed
+    // behind a TLS reverse proxy (see docs/multiplayer-deployment.md §4).
+    const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = `${wsProto}://${address}`;
     this.netClient = new NetClient();
     this.netClient.onWelcome = (m) => {
       this.mpLocalId = m.you;
