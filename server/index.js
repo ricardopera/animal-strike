@@ -262,9 +262,24 @@ export function main() {
       cert: readFileSync(config.tlsCert),
       key: readFileSync(config.tlsKey),
     });
+    // Serve a simple HTML page on regular HTTPS requests. This lets users
+    // visit the server's HTTPS URL in their browser to accept the self-signed
+    // cert (needed for WSS — browsers silently reject WSS to untrusted certs
+    // with no UI to bypass). Once accepted here, wss:// connections work.
+    httpsServer.on('request', (req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(`<!DOCTYPE html><html><body style="font-family:monospace;padding:40px;background:#1a1a2e;color:#0f0">
+<h1>✅ AnimalStrike Server Ready</h1>
+<p>Certificate accepted. You can close this tab and connect from the game.</p>
+<p>Server: ${req.headers.host || config.host + ':' + config.port}</p>
+<p>TLS: enabled (wss://)</p>
+</body></html>`);
+    });
     httpsServer.listen(config.port, config.host);
     wss = new WebSocketServer({ server: httpsServer });
     console.log(`TLS enabled: cert=${config.tlsCert} key=${config.tlsKey}`);
+    console.log(`→ Visit https://<your-ip>:${config.port} in your browser FIRST to accept the cert,`);
+    console.log(`  then connect from the game via wss://<your-ip>:${config.port}`);
   } else {
     wss = new WebSocketServer({ host: config.host, port: config.port });
   }
