@@ -32,7 +32,6 @@ import { Sfx, resumeAudio } from '../audio/Audio.js';
 import { MusicPlayer } from '../audio/MusicPlayer.js';
 import { VoicePlayer } from '../audio/VoicePlayer.js';
 import { NetClient } from '../net/NetClient.js';
-import { reconcileSnapshot } from '../net/reconcile.js';
 import { setActiveSkin as setWeaponSkin } from '../player/WeaponParts.js';
 import { DEFAULT_SKIN } from '../config/WeaponSkins.js';
 import { RemoteView } from '../net/RemoteView.js';
@@ -511,36 +510,11 @@ export class Game {
       this.mpActive = true;
     };
     this.netClient.onSnapshot = (snap) => {
+      // Pure snapshot interpolation: just push to the RemoteView buffer. No
+      // reconciliation — the local player's position comes entirely from the
+      // interpolated snapshot buffer (see frameMultiplayer). Health/alive/ammo
+      // are read from localState each frame.
       if (this.remoteView) this.remoteView.pushSnapshot(snap);
-      const me = snap.players.find(p => p.id === this.mpLocalId);
-      if (me && this.player) {
-        // Delegate to the tested pure helper (see src/net/reconcile.js). It
-        // handles respawn discontinuities, ammo anti-bounce, and position
-        // hard-snap-on-large-drift — the three sources of "can't move /
-        // rubber-band / ammo-flicker / ghost-movement" lag. We pass a view onto
-        // the player/weapon; primitive fields (yaw/pitch/alive/health) are
-        // copied back explicitly since they can't be mutated in place.
-        const r = reconcileSnapshot(
-          {
-            position: this.player.position,
-            velocity: this.player.velocity,
-            yaw: this.player.yaw, pitch: this.player.pitch,
-            alive: this.player.alive, health: this.player.health,
-            intent: this.player.intent,
-            weapon: this.weapon,
-          },
-          me
-        );
-        if (r.respawned) {
-          // yaw/pitch were overwritten in the helper's local state copy on
-          // respawn — copy them back to the player.
-          this.player.yaw = me.yaw;
-          this.player.pitch = me.pitch;
-        }
-        // alive/health are always written by the helper; mirror to the player.
-        this.player.alive = me.alive;
-        this.player.health = me.hp;
-      }
       this.match.timeLeft = snap.timeLeft;
     };
     this.netClient.onMatchEnd = (ranked) => {
@@ -646,132 +620,109 @@ export class Game {
 
   frameMultiplayer(realDt) {
     if (this.paused) return;
-    if (!this.netClient || !this.player) return;
-    // Look
+    if (!this.netClient || !this.remoteView) return;
+
+    // --- Look (instant — applied directly to camera, never waits for server) ---
     if (this.match.active) {
       const look = this.input.consumeLook();
       this.player.yaw -= look.dx;
       this.player.pitch -= look.dy;
       this.player.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.player.pitch));
     }
-    this.player.intent = this.input.buildIntent();
-
-    // Capture this frame's firing/reload intent BEFORE sending (so the server
-    // and the local weapon see the same state this frame).
-    const firing = this.match.active && this.player.alive && this.player.intent.firing;
+    const intent = this.input.buildIntent();
+    const firing = this.match.active && intent.firing;
     const reloadReq = this.input.consumeReloadRequest();
 
-    // Send input to server (absolute yaw/pitch + movement intent).
-    if (this.match.active && this.player.alive) {
+    // --- Send inputs to server (the server owns the authoritative position) ---
+    if (this.match.active) {
       this.netClient.sendInput({
-        forward: this.player.intent.forward, strafe: this.player.intent.strafe,
-        jump: this.player.intent.jump, sprint: this.player.intent.sprint,
-        crouch: this.player.intent.crouch, firing: this.player.intent.firing,
+        forward: intent.forward, strafe: intent.strafe,
+        jump: intent.jump, sprint: intent.sprint,
+        crouch: intent.crouch, firing: intent.firing,
         reloadRequested: reloadReq,
         yaw: this.player.yaw, pitch: this.player.pitch,
       });
     }
 
-    // Local sim (prediction): advance BOTH movement and the local weapon so the
-    // viewmodel animates, ammo/reload tick locally, and queued shots produce
-    // immediate muzzle/tracer/recoil feedback. The server still decides damage
-    // authoritatively (its own WeaponController enforces fire-rate), but the
-    // player sees/hears their shot the frame they click — no round-trip wait.
-    if (this.match.active && this.player.alive) {
-      this.fixed.update(realDt, (dt) => {
-        tickMovement(this.player, dt, this.colliders);
-        this.weapon.update(dt, firing, reloadReq);
-      });
-      // Resolve locally-queued shots for instant visual/audio feedback. We don't
-      // apply damage here (server is authoritative) — just FX + a hitmarker off
-      // the local raycast for responsiveness; the server's result wins.
-      for (const _shot of this.pendingShots) this.fireOneShotLocalFx(this.player, this.weapon);
-      this.pendingShots.length = 0;
-    } else {
-      // Still tick the weapon out-of-match so reload animations finish.
-      this.weapon.update(realDt, false, reloadReq);
-    }
+    // --- Tick the local weapon locally for instant fire/reload feedback ---
+    // (The server enforces fire-rate authoritatively; this is just for viewmodel
+    // animation + the immediate muzzle/tracer/sfx the player sees on click.)
+    this.weapon.update(realDt, firing, reloadReq);
+    for (const _shot of this.pendingShots) this.fireOneShotLocalFx(this.player, this.weapon);
+    this.pendingShots.length = 0;
 
-    // Render remote players from interpolated snapshots.
-    if (this.remoteView) {
-      this.remoteView.update(this.mpLocalId, realDt);
-      for (const ev of this.remoteView.drainEvents()) {
-        // Skip our own shots — we already spawned local FX above for immediacy;
-        // a second tracer from the snapshot would double up.
-        if (ev.k === 'shot') {
-          if (ev.shooter === this.mpLocalId) continue;
-          this.tracers.spawn(new THREE.Vector3(ev.ox, ev.oy, ev.oz), new THREE.Vector3(ev.dx, ev.dy, ev.dz));
-          this.flashes.spawn(new THREE.Vector3(ev.ox + ev.dx * 0.6, ev.oy + ev.dy * 0.6, ev.oz + ev.dz * 0.6));
-        } else if (ev.k === 'hit') {
-          // Authoritative hit from the server. Spawn damage FX at the victim's
-          // position (the snapshot carries it; the hit event itself has no
-          // point). Without this, shots in MP visually "do nothing" — the
-          // damage registers server-side but the player sees no feedback.
-          const snapPlayers = this.remoteView.snapshots.at(-1)?.players || [];
-          const victim = snapPlayers.find(p => p.id === ev.victim);
-          if (victim) {
-            // Body-center the FX: victim position + chest height.
-            const point = new THREE.Vector3(victim.x, victim.y + 1.0, victim.z);
-            this.damageNumbers.spawn(point, ev.dmg, ev.hs);
-            this.sparks.spawn(point, new THREE.Vector3(0, 1, 0), ev.hs ? 0xffaa22 : 0xff3344);
-          }
-          if (ev.shooter === this.mpLocalId) {
-            this.hud.showHitmarker(false);
-            Sfx.hit();
-          }
-          if (ev.victim === this.mpLocalId) {
-            Sfx.hurt();
-          }
-        } else if (ev.k === 'kill') {
-          const s = (this.remoteView.snapshots.at(-1)?.players || []).find(p => p.id === ev.shooter);
-          const v = (this.remoteView.snapshots.at(-1)?.players || []).find(p => p.id === ev.victim);
-          this.hud.addKill(`${s ? s.name : '?'} ${ev.hs ? 'headshotted' : 'fragged'} ${v ? v.name : '?'}`);
-          if (ev.shooter === this.mpLocalId) Sfx.kill();
+    // --- Interpolate ALL players (including local) from server snapshots ---
+    // No local prediction: the local player's position comes purely from the
+    // interpolated snapshot buffer (same as remote players). This eliminates all
+    // drift/rubber-band/loop bugs — the client never runs movement.
+    this.remoteView.update(this.mpLocalId, realDt);
+    const ls = this.remoteView.localState;
+
+    // --- Process server events (tracers, damage FX, killfeed) ---
+    for (const ev of this.remoteView.drainEvents()) {
+      if (ev.k === 'shot') {
+        if (ev.shooter === this.mpLocalId) continue; // local FX already spawned
+        this.tracers.spawn(new THREE.Vector3(ev.ox, ev.oy, ev.oz), new THREE.Vector3(ev.dx, ev.dy, ev.dz));
+        this.flashes.spawn(new THREE.Vector3(ev.ox + ev.dx * 0.6, ev.oy + ev.dy * 0.6, ev.oz + ev.dz * 0.6));
+      } else if (ev.k === 'hit') {
+        const snapPlayers = this.remoteView.snapshots.at(-1)?.players || [];
+        const victim = snapPlayers.find(p => p.id === ev.victim);
+        if (victim) {
+          const point = new THREE.Vector3(victim.x, victim.y + 1.0, victim.z);
+          this.damageNumbers.spawn(point, ev.dmg, ev.hs);
+          this.sparks.spawn(point, new THREE.Vector3(0, 1, 0), ev.hs ? 0xffaa22 : 0xff3344);
         }
+        if (ev.shooter === this.mpLocalId) { this.hud.showHitmarker(false); Sfx.hit(); }
+        if (ev.victim === this.mpLocalId) Sfx.hurt();
+      } else if (ev.k === 'kill') {
+        const s = (this.remoteView.snapshots.at(-1)?.players || []).find(p => p.id === ev.shooter);
+        const v = (this.remoteView.snapshots.at(-1)?.players || []).find(p => p.id === ev.victim);
+        this.hud.addKill(`${s ? s.name : '?'} ${ev.hs ? 'headshotted' : 'fragged'} ${v ? v.name : '?'}`);
+        if (ev.shooter === this.mpLocalId) Sfx.kill();
       }
     }
 
-    // FX + camera + HUD (mirrors single-player rendering tail).
+    // --- Render: camera follows the interpolated local position ---
     this.tracers.update(realDt);
     this.flashes.update(realDt);
     this.sparks.update(realDt);
     this.damageNumbers.update(realDt);
-    const eye = eyePosition(this.player);
-    this.camera.position.copy(eye);
+    // Camera position = interpolated server position + eye height.
+    this.camera.position.set(ls.x, ls.y + M.EYE_HEIGHT, ls.z);
+    // Camera rotation = local mouse-look (instant, NOT from snapshots).
     this.camera.rotation.set(0, 0, 0);
     this.camera.rotation.order = 'YXZ';
     this.camera.rotation.y = this.player.yaw;
     this.camera.rotation.x = this.player.pitch;
     this.camera.updateMatrixWorld();
     if (this.sun) {
-      this.sun.position.set(eye.x + 40, 80, eye.z + 30);
-      this.sun.target.position.set(eye.x, eye.y, eye.z);
+      this.sun.position.set(ls.x + 40, 80, ls.z + 30);
+      this.sun.target.position.set(ls.x, ls.y, ls.z);
       this.sun.target.updateMatrixWorld();
     }
-    const showFP = this.match.active && this.player.alive;
+    const showFP = this.match.active && ls.alive;
     this.firstPersonView.setVisible(showFP);
     if (showFP) {
       this.firstPersonView.syncToCamera(this.camera);
-      this.firstPersonView.update(realDt, Math.hypot(this.player.velocity.x, this.player.velocity.z));
+      this.firstPersonView.update(realDt, Math.hypot(ls.vx, ls.vz));
     }
     if (this.bloomEnabled && this.composer) this.composer.render();
     else this.renderer.render(this.scene, this.camera);
 
-    this.hud.setHealth(this.player.health);
+    // --- HUD (driven by interpolated/server-authoritative state) ---
+    this.hud.setHealth(ls.hp);
     this.hud.setAmmo(this.weapon.ammo, this.weapon.def.mag);
     this.hud.setReloadProgress(this.weapon.reloading ? this.weapon.reloadProgress : 1);
     this.hud.setTime(Math.ceil(this.match.timeLeft));
-    const speed = Math.hypot(this.player.velocity.x, this.player.velocity.z);
+    const speed = Math.hypot(ls.vx, ls.vz);
     this.crosshair.setSpread(14 + speed * 2);
-    // Sprint FOV kick — mirrors the single-player feel so sprinting widens FOV.
-    const targetFov = this.baseFov + (this.player.intent.sprint && this.player.velocity.lengthSq() > 4 ? 8 : 0);
+    const targetFov = this.baseFov + (intent.sprint && speed > 2 ? 8 : 0);
     if (Math.abs(this.camera.fov - targetFov) > 0.05) {
       this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, realDt * 10);
       this.camera.updateProjectionMatrix();
     }
-    // Low-HP vignette — same as single player.
     if (this.vignetteEl) {
-      const intensity = this.player.alive && this.player.health < 30 ? (30 - this.player.health) / 30 : 0;
+      const intensity = ls.alive && ls.hp < 30 ? (30 - ls.hp) / 30 : 0;
       this.vignetteEl.style.boxShadow = `inset 0 0 200px 60px rgba(180,0,0,${(intensity * 0.6).toFixed(3)})`;
     }
     this.scoreboard.update(this.remoteView ? (this.remoteView.snapshots.at(-1)?.players || []).map(p => ({ id: p.id, name: p.name, animalId: p.animal, score: p.score, deaths: 0, isLocal: p.id === this.mpLocalId, alive: p.alive })) : []);

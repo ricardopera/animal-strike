@@ -1,0 +1,12 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - generic:
+      - generic: 5:00
+      - generic:
+        - generic: HP 85
+      - generic:
+        - generic:
+          - generic:
+            - img
+          - generic: Assault Rifle
+        - generic: 30/30

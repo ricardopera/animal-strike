@@ -1,0 +1,12 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - generic:
+      - generic: 1:26
+      - generic:
+        - generic: HP 13
+      - generic:
+        - generic:
+          - generic:
+            - img
+          - generic: Sniper
+        - generic: 5/30

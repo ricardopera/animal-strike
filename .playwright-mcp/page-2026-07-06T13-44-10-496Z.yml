@@ -1,0 +1,87 @@
+- generic [active] [ref=f1e1]:
+  - generic:
+    - generic:
+      - generic: 5:00
+      - generic:
+        - generic: HP 85
+      - generic:
+        - generic:
+          - generic:
+            - img
+          - generic: Assault Rifle
+        - generic: 30/30
+    - generic [ref=f1e3]:
+      - heading "ANIMALSTRIKE" [level=1] [ref=f1e4]
+      - paragraph [ref=f1e5]: Pick your animal and weapon
+      - generic [ref=f1e6]:
+        - button "Single Player vs bots, local" [ref=f1e7] [cursor=pointer]:
+          - text: Single Player
+          - text: vs bots, local
+        - button "Connect join a server" [ref=f1e8] [cursor=pointer]:
+          - text: Connect
+          - text: join a server
+      - generic [ref=f1e9]:
+        - button "Fox Scout spd ×1.15 hp ×0.85 jmp ×1.10" [ref=f1e10] [cursor=pointer]:
+          - text: Fox Scout
+          - text: spd ×1.15 hp ×0.85 jmp ×1.10
+        - button "Wolf Soldier spd ×1.00 hp ×1.05 jmp ×1.00" [ref=f1e11] [cursor=pointer]:
+          - text: Wolf Soldier
+          - text: spd ×1.00 hp ×1.05 jmp ×1.00
+        - button "Panda Tank spd ×0.90 hp ×1.30 jmp ×0.90" [ref=f1e12] [cursor=pointer]:
+          - text: Panda Tank
+          - text: spd ×0.90 hp ×1.30 jmp ×0.90
+        - button "Tiger Striker spd ×1.08 hp ×1.00 jmp ×1.05" [ref=f1e13] [cursor=pointer]:
+          - text: Tiger Striker
+          - text: spd ×1.08 hp ×1.00 jmp ×1.05
+        - button "Bear Juggernaut spd ×0.88 hp ×1.35 jmp ×0.85" [ref=f1e14] [cursor=pointer]:
+          - text: Bear Juggernaut
+          - text: spd ×0.88 hp ×1.35 jmp ×0.85
+        - button "Bunny Speedster spd ×1.25 hp ×0.80 jmp ×1.35" [ref=f1e15] [cursor=pointer]:
+          - text: Bunny Speedster
+          - text: spd ×1.25 hp ×0.80 jmp ×1.35
+        - button "Owl Marksman spd ×1.00 hp ×0.90 jmp ×1.05" [ref=f1e16] [cursor=pointer]:
+          - text: Owl Marksman
+          - text: spd ×1.00 hp ×0.90 jmp ×1.05
+      - generic [ref=f1e17]:
+        - button "Assault Rifle hs ×2.0" [ref=f1e18] [cursor=pointer]:
+          - text: Assault Rifle
+          - text: hs ×2.0
+        - button "Sniper hs ×2.5" [ref=f1e19] [cursor=pointer]:
+          - text: Sniper
+          - text: hs ×2.5
+        - button "SMG hs ×1.7" [ref=f1e20] [cursor=pointer]:
+          - text: SMG
+          - text: hs ×1.7
+        - button "Shotgun hs ×1.5" [ref=f1e21] [cursor=pointer]:
+          - text: Shotgun
+          - text: hs ×1.5
+        - button "Pistol hs ×2.2" [ref=f1e22] [cursor=pointer]:
+          - text: Pistol
+          - text: hs ×2.2
+      - generic [ref=f1e23]:
+        - generic [ref=f1e24]: WEAPON SKIN
+        - generic [ref=f1e25]:
+          - button "Gunmetal" [ref=f1e26] [cursor=pointer]: Gunmetal
+          - button "Tactical Camo" [ref=f1e28] [cursor=pointer]: Tactical Camo
+          - button "Worn Steel" [ref=f1e30] [cursor=pointer]: Worn Steel
+          - button "Gold" [ref=f1e32] [cursor=pointer]: Gold
+          - button "Snake Skin" [ref=f1e34] [cursor=pointer]: Snake Skin
+          - button "Neon" [ref=f1e36] [cursor=pointer]: Neon
+          - button "Ice" [ref=f1e38] [cursor=pointer]: Ice
+          - button "Wood" [ref=f1e40] [cursor=pointer]: Wood
+      - generic [ref=f1e42]:
+        - generic [ref=f1e43]: "Server address:"
+        - textbox "ip:port" [ref=f1e44]: localhost:8080
+      - generic [ref=f1e45]:
+        - button "Plaza Open central yard with twin towers" [ref=f1e46] [cursor=pointer]:
+          - text: Plaza
+          - text: Open central yard with twin towers
+        - button "Foundry Industrial catwalks and forge pits" [ref=f1e47] [cursor=pointer]:
+          - text: Foundry
+          - text: Industrial catwalks and forge pits
+        - button "Dustbowl Desert mesas and long open sightlines" [ref=f1e48] [cursor=pointer]:
+          - text: Dustbowl
+          - text: Desert mesas and long open sightlines
+      - generic [ref=f1e49]: "Connect mode: enter the server's address (e.g. 192.168.1.5:8080). Anyone in the lobby can pick the map and start the match."
+      - button "CONNECT" [ref=f1e50] [cursor=pointer]
+      - button "SETTINGS" [ref=f1e51] [cursor=pointer]
