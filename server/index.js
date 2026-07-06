@@ -235,6 +235,18 @@ export function main() {
   }
   const config = loadConfig({ file: fileConfig });
   const wss = new WebSocketServer({ host: config.host, port: config.port });
+  // Handle bind failures (port in use / permission denied) with a clear message
+  // instead of an unhandled 'error' event + stack trace.
+  wss.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Port ${config.port} is already in use. Stop the other process, or choose a different port (AS_PORT / --port).`);
+    } else if (err.code === 'EACCES') {
+      console.error(`Permission denied binding ${config.host}:${config.port}. Ports <1024 need root; try a higher port (AS_PORT / --port).`);
+    } else {
+      console.error('Server error:', err.message);
+    }
+    process.exit(1);
+  });
   const room = createRoom(config);
   let last = Date.now();
   const tickMs = 1000 / TICK_HZ;
