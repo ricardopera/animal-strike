@@ -631,6 +631,12 @@ export class Game {
       this.player.yaw -= look.dx;
       this.player.pitch -= look.dy;
       this.player.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.player.pitch));
+      // Wrap yaw to [-π, π] so it never accumulates unboundedly. Without this,
+      // the local yaw drifts (e.g. 100 radians after lots of spinning) while the
+      // server clamps to [-π, π] via clampInput — the forward vectors diverge
+      // and the player moves in a different direction than where they're looking.
+      while (this.player.yaw > Math.PI) this.player.yaw -= 2 * Math.PI;
+      while (this.player.yaw < -Math.PI) this.player.yaw += 2 * Math.PI;
     }
     const intent = this.input.buildIntent();
     const firing = this.match.active && intent.firing;
@@ -660,6 +666,15 @@ export class Game {
     // drift/rubber-band/loop bugs — the client never runs movement.
     this.remoteView.update(this.mpLocalId, realDt);
     const ls = this.remoteView.localState;
+
+    // Detect respawn: local player was dead last frame, now alive. Reset the
+    // local weapon to full ammo + cancel reload so the HUD shows correctly.
+    if (ls.alive && !this._mpWasAlive) {
+      this.weapon.ammo = this.weapon.def.mag;
+      this.weapon.reloading = false;
+      this.weapon.nextFireTime = 0;
+    }
+    this._mpWasAlive = ls.alive;
 
     // --- Process server events (tracers, damage FX, killfeed) ---
     for (const ev of this.remoteView.drainEvents()) {
