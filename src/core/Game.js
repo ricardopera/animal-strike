@@ -703,8 +703,25 @@ export class Game {
           this.tracers.spawn(new THREE.Vector3(ev.ox, ev.oy, ev.oz), new THREE.Vector3(ev.dx, ev.dy, ev.dz));
           this.flashes.spawn(new THREE.Vector3(ev.ox + ev.dx * 0.6, ev.oy + ev.dy * 0.6, ev.oz + ev.dz * 0.6));
         } else if (ev.k === 'hit') {
-          // Authoritative hit marker from the server: only show for our shots.
-          if (ev.shooter === this.mpLocalId) this.hud.showHitmarker(false);
+          // Authoritative hit from the server. Spawn damage FX at the victim's
+          // position (the snapshot carries it; the hit event itself has no
+          // point). Without this, shots in MP visually "do nothing" — the
+          // damage registers server-side but the player sees no feedback.
+          const snapPlayers = this.remoteView.snapshots.at(-1)?.players || [];
+          const victim = snapPlayers.find(p => p.id === ev.victim);
+          if (victim) {
+            // Body-center the FX: victim position + chest height.
+            const point = new THREE.Vector3(victim.x, victim.y + 1.0, victim.z);
+            this.damageNumbers.spawn(point, ev.dmg, ev.hs);
+            this.sparks.spawn(point, new THREE.Vector3(0, 1, 0), ev.hs ? 0xffaa22 : 0xff3344);
+          }
+          if (ev.shooter === this.mpLocalId) {
+            this.hud.showHitmarker(false);
+            Sfx.hit();
+          }
+          if (ev.victim === this.mpLocalId) {
+            Sfx.hurt();
+          }
         } else if (ev.k === 'kill') {
           const s = (this.remoteView.snapshots.at(-1)?.players || []).find(p => p.id === ev.shooter);
           const v = (this.remoteView.snapshots.at(-1)?.players || []).find(p => p.id === ev.victim);

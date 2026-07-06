@@ -250,11 +250,25 @@ export function main() {
   const room = createRoom(config);
   let last = Date.now();
   const tickMs = 1000 / TICK_HZ;
+  const FIXED_DT = 1 / TICK_HZ;
+  let accumulator = 0;
   const tickInterval = setInterval(() => {
     const t = Date.now();
-    let dt = (t - last) / 1000; last = t;
-    if (dt > 0.1) dt = 0.1;
-    room.step(dt);
+    let realDt = (t - last) / 1000; last = t;
+    if (realDt > 0.1) realDt = 0.1; // clamp stalls (tab switch, GC pause)
+    // Fixed-timestep accumulator — advances the sim in exact FIXED_DT steps so
+    // it integrates IDENTICALLY to the client's FixedTimestep prediction. A raw
+    // variable-dt loop here would slowly diverge from the client's fixed-step
+    // prediction, and the client's drift-snap reconciliation would teleport the
+    // player back every few seconds ("move-and-return loop").
+    accumulator += realDt;
+    let steps = 0;
+    while (accumulator >= FIXED_DT && steps < 5) {
+      room.step(FIXED_DT);
+      accumulator -= FIXED_DT;
+      steps++;
+    }
+    if (accumulator > FIXED_DT * 5) accumulator = 0; // discard unbounded backlog
     // auto-start once enough humans are connected
     if (config.autoStart && !room.sim.match.active && room.humanCount() >= config.minPlayers) {
       room.operatorStart();
