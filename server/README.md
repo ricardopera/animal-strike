@@ -9,14 +9,12 @@ This is **peer-hosted**, not internet matchmaking — players connect directly t
 From the project root:
 
 ```bash
-npm run host
+npm install      # installs both client + server deps (incl. ws) at the project root
+npm run host     # starts the WebSocket server on :8080
 ```
 
-Or directly:
-
-```bash
-cd server && npm install && npm start
-```
+> `ws` is a dependency of the root `package.json`, so a single `npm install` at the
+> project root installs everything. There is no separate `server/package.json`.
 
 The server listens on `ws://0.0.0.0:8080` by default. Override the port with `PORT`:
 

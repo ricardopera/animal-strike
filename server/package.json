@@ -1,7 +1,0 @@
-{
-  "name": "animal-strike-server",
-  "type": "module",
-  "private": true,
-  "scripts": { "start": "node index.js" },
-  "dependencies": { "ws": "^8.18.0" }
-}
