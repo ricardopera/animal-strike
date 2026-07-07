@@ -4,7 +4,6 @@ import { makeBuildHelper } from '../MapBuildHelper.js';
 import {
   cottage, well, marketStall, haystack, bannerPole, cart, barrel,
 } from '../props/Village.js';
-import { translateBox } from '../props/_shared.js';
 
 // Haven — a cozy medieval village square. Cobblestone streets, thatched-roof
 // cottages around a perimeter ring, a central stone well (the focal point),
@@ -161,7 +160,7 @@ function build(scene, colliders, helper) {
   };
   authorGeometry(place, placePair);
 
-  // COBBLESTED STREETS — thin flat decorative quads laid just above the ground
+  // COBBLESTONE STREETS — thin flat decorative quads laid just above the ground
   // to read as worn cross-streets. PURELY VISUAL: added straight to the group,
   // never through place() (which would register an AABB).
   const streetMat = new THREE.MeshStandardMaterial({
@@ -184,8 +183,7 @@ function build(scene, colliders, helper) {
   // collidable footprint boxes above, for visual richness (roofs, awnings,
   // thatch, cloth). Each prop's own .boxes are deliberately NOT registered: the
   // place() footprint box is the single source of collision, so the prop mesh
-  // must sit exactly on the footprint. translateBox is unused for colliders
-  // here — we only translate the visual group.position.
+  // must sit exactly on the footprint. We only translate the visual group.position.
   const addProp = (factory, x, z, opts) => {
     const { group: g } = factory(opts);
     g.position.set(x, 0, z);
