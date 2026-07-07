@@ -16,3 +16,6 @@ npm-debug.log*
 # Vite
 .vite/
 Thumbs.db
+
+# Local git worktrees
+.worktrees/
