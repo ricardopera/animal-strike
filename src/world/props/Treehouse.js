@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { boxMesh, coneMesh } from './_shared.js';
+import { boxMesh, coneMesh, cylMesh } from './_shared.js';
 
 // Treehouse/Canopy themed prop factories (for the Canopy map). Each returns
 // { group, boxes } following the same contract as Village.js/PalmTree.js, but
@@ -8,16 +8,6 @@ import { boxMesh, coneMesh } from './_shared.js';
 // authors separately (e.g. the trunk's collider is the map's place() box).
 //
 // All builders are deterministic (no Math.random without a seed).
-
-// A plain dark cylinder, simpler than _shared.cylMesh's full signature (6
-// segments, flatShading). Private helper for lantern posts.
-function cylMeshSimple(color, rTop, rBot, h, x, y, z) {
-  const m = new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.9 });
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, h, 6), m);
-  mesh.position.set(x, y, z);
-  mesh.castShadow = true; mesh.receiveShadow = true;
-  return mesh;
-}
 
 // A chunky low-poly canopy cap for a giant tree: 3 stacked cones reading as the
 // forest ceiling. Decorative-only (no .boxes) — the trunk's collider is the
@@ -30,7 +20,7 @@ export function canopyFoliage({
   tint = 0x3a7a4a,
 } = {}) {
   const group = new THREE.Group();
-  group.name = 'canopy-foliage';
+  group.name = 'canopyFoliage';
   // Lower wide dome.
   group.add(coneMesh(radius, height * 0.5, color, 0, baseY + height * 0.25, 0, 8));
   // Mid tier (smaller, tinted lighter).
@@ -79,8 +69,8 @@ export function lantern({
 } = {}) {
   const group = new THREE.Group();
   group.name = 'lantern';
-  // Short post.
-  group.add(cylMeshSimple(postColor, 0.06, 0.06, 0.6, 0, baseY + 0.3, 0));
+  // Short post (6-segment flat-shaded cylinder via the shared helper).
+  group.add(cylMesh(0.06, 0.06, 0.6, postColor, 0, baseY + 0.3, 0, 6));
   // Lamp body — emissive so it reads as glowing even under flat lighting.
   const lampMat = new THREE.MeshStandardMaterial({
     color: glowColor, emissive: glowColor, emissiveIntensity: 1.2, flatShading: true, roughness: 0.6,
