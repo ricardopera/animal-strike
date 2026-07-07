@@ -713,7 +713,7 @@ export class Game {
     player.alive = false;
     player.health = 0;
     player.deaths += 1;
-    if (player.view) player.view.setVisible(!player.isLocal); // local stays hidden (first person)
+    if (player.view) player.view.setVisible(false); // hide the victim's model (matches combat death)
     const name = player.isLocal ? 'You' : player.id;
     this.hud.addKill(`${name} fell into the void`);
     if (player.animalId) this.voice.playAnimal(player.animalId, 'death');
