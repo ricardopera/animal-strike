@@ -2,9 +2,10 @@ import { PLAZA } from './maps/Plaza.js';
 import { FOUNDRY } from './maps/Foundry.js';
 import { DUSTBOWL } from './maps/Dustbowl.js';
 import { HAVEN } from './maps/Haven.js';
+import { TROPIC } from './maps/Tropic.js';
 
 // The map roster. Order = menu/rotation order; MAPS[0] is the default.
-export const MAPS = [PLAZA, FOUNDRY, DUSTBOWL, HAVEN];
+export const MAPS = [PLAZA, FOUNDRY, DUSTBOWL, HAVEN, TROPIC];
 
 // Look up a map by id. Falls back to the default (Plaza) for undefined/null,
 // returns undefined for an unknown (but non-null) id so callers can detect typos.
