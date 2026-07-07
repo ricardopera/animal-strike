@@ -229,7 +229,6 @@ export class WaterPlane {
     this._posAttr = posAttr;
     this._widthSegments = widthSegments;
     this._depthSegments = depthSegments;
-    this._baseColor = new THREE.Color(color);
   }
 
   // Per-frame animation:
