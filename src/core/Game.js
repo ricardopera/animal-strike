@@ -676,7 +676,7 @@ export class Game {
     this.voice.play(youWon ? 'victory' : 'defeat');
     // The winner's animal speaks its victory line in its own voice.
     if (ranked[0] && ranked[0].animalId) this.voice.playAnimal(ranked[0].animalId, 'victory');
-    this.music.play('menu');
+    this.music.play(youWon ? 'victory' : 'defeat');
     this.endScreen.show(ranked);
   }
 
@@ -854,6 +854,7 @@ export class Game {
         if (this.match.timeLeft <= 30 && !this._lowTimeAnnounced) {
           this._lowTimeAnnounced = true;
           this.voice.play('lowTime');
+          this.music.play('clutch');
         }
         if (this.match.timeLeft <= 0) {
           this.match.timeLeft = 0;
@@ -1142,6 +1143,11 @@ export class Game {
           if (shooter.score > 0 && shooter.score % 5 === 0 && shooter.score !== this._lastFragMilestone) {
             this._lastFragMilestone = shooter.score;
             this.voice.play('fragMilestone');
+            // Switch to the tense clutch track when the local player is within 2
+            // frags of winning (close-to-the-finish feel). No-op if already clutch.
+            if (shooter.isLocal && shooter.score >= this.match.fragTarget - 2) {
+              this.music.play('clutch');
+            }
           }
           this.respawnTimers.set(best.target.id, MATCH.respawnDelay);
           // Killstreak: local killer increments, local victim resets.

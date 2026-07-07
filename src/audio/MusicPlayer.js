@@ -10,32 +10,76 @@ function ensure() {
   return ctx;
 }
 
-const TRACKS = {
-  menu: asset('/audio/music/menu_loop.mp3'),
-  combat: asset('/audio/music/combat_loop.mp3'),
+// Mood -> list of track URLs. Each mood maps to one or more tracks; on play()
+// a single track is chosen (round-robin per mood) so consecutive calls to the
+// same mood vary the music. URLs are shared across moods where intentional
+// (e.g. combat_anthem_vocal.mp3 appears in both `combat` and `clutch`); preload()
+// dedupes by URL so the buffer is fetched/decoded only once and shared.
+// Exported for tests/inspection (the mood->URLs registry).
+export const MOODS = {
+  menu: [
+    asset('/audio/music/menu_loop.mp3'),
+    asset('/audio/music/music_extras/menu_loop_2.mp3'),
+    asset('/audio/music/music_extras/menu_theme_vocal.mp3'),
+  ],
+  combat: [
+    asset('/audio/music/combat_loop.mp3'),
+    asset('/audio/music/music_extras/combat_loop_2.mp3'),
+    asset('/audio/music/music_extras/combat_loop_3.mp3'),
+    asset('/audio/music/music_extras/tension_suspense.mp3'),
+    asset('/audio/music/music_extras/hunt_theme_vocal.mp3'),
+    asset('/audio/music/music_extras/combat_anthem_vocal.mp3'),
+  ],
+  victory: [
+    asset('/audio/music/music_extras/victory_anthem.mp3'),
+    asset('/audio/music/music_extras/victory_song_vocal.mp3'),
+  ],
+  defeat: [
+    asset('/audio/music/music_extras/defeat_theme.mp3'),
+    asset('/audio/music/music_extras/defeat_song_vocal.mp3'),
+  ],
+  clutch: [
+    asset('/audio/music/music_extras/last_stand_vocal.mp3'),
+    asset('/audio/music/music_extras/combat_anthem_vocal.mp3'),
+  ],
 };
+
+// Flatten every URL across all moods, de-duplicated (preserves first-seen order).
+function allTrackUrls() {
+  const seen = new Set();
+  const out = [];
+  for (const urls of Object.values(MOODS)) {
+    for (const u of urls) {
+      if (!seen.has(u)) { seen.add(u); out.push(u); }
+    }
+  }
+  return out;
+}
 
 export class MusicPlayer {
   constructor() {
-    this.buffers = {};      // trackId -> AudioBuffer (or null if unloaded/failed)
+    this.buffers = {};      // url -> AudioBuffer (or null if unloaded/failed -> synth fallback)
     this.currentSource = null;
     this.currentGain = null;
-    this.currentId = null;
+    this.currentId = null;  // the active MOOD id (so play(sameMood) is a no-op)
+    this.currentUrl = null; // the URL of the track currently playing
     this.targetVolume = 0.35;
     this.muted = false;
     this.started = false;
+    this._moodIndex = {};   // mood id -> round-robin cursor
   }
 
   async preload() {
-    await Promise.all(Object.entries(TRACKS).map(async ([id, url]) => {
+    // Load every distinct URL exactly once (dedup), cache by URL.
+    await Promise.all(allTrackUrls().map(async (url) => {
       try {
         const res = await fetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const arr = await res.arrayBuffer();
-        this.buffers[id] = await ensure().decodeAudioData(arr);
+        this.buffers[url] = await ensure().decodeAudioData(arr);
       } catch (e) {
-        console.warn(`[MusicPlayer] could not load ${url}; using synth fallback for "${id}":`, e.message);
-        this.buffers[id] = null; // marker -> synth fallback
+        console.warn(`[MusicPlayer] could not load ${url}; using synth fallback:`, e.message);
+        this.buffers[url] = null; // marker -> synth fallback
       }
     }));
   }
@@ -56,14 +100,29 @@ export class MusicPlayer {
     }
   }
 
-  // Switch to a track (crossfade ~0.8s). No-op if already on it.
-  play(trackId) {
-    if (this.currentId === trackId && this.started) return;
+  // Resolve a mood id to one of its tracks via per-mood round-robin.
+  _pickTrack(moodId) {
+    const list = MOODS[moodId];
+    if (!list || list.length === 0) return null;
+    if (list.length === 1) return list[0];
+    const idx = this._moodIndex[moodId] || 0;
+    const url = list[idx % list.length];
+    this._moodIndex[moodId] = (idx + 1) % list.length;
+    return url;
+  }
+
+  // Switch to a mood (crossfade ~0.8s). No-op if already on this mood. Picks
+  // one track from the mood's list (round-robin) so repeated calls vary.
+  play(moodId) {
+    if (this.currentId === moodId && this.started) return;
+    const url = this._pickTrack(moodId);
+    if (!url) return; // unknown/empty mood -> nothing to play
     resumeAudio();
     const c = ensure();
     this._stop(c.currentTime + 0.8);
-    this._start(trackId, c.currentTime + 0.8);
-    this.currentId = trackId;
+    this._start(url, c.currentTime + 0.8);
+    this.currentId = moodId;
+    this.currentUrl = url;
     this.started = true;
   }
 
@@ -72,12 +131,13 @@ export class MusicPlayer {
     const c = ensure();
     this._stop(c.currentTime + 0.8);
     this.currentId = null;
+    this.currentUrl = null;
     this.started = false;
   }
 
-  _start(trackId, when) {
+  _start(url, when) {
     const c = ensure();
-    const buffer = this.buffers[trackId];
+    const buffer = this.buffers[url];
     const gain = c.createGain();
     gain.gain.setValueAtTime(0, when);
     gain.gain.linearRampToValueAtTime(this.muted ? 0 : this.targetVolume, when + 0.8);
