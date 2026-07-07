@@ -193,11 +193,99 @@ function build(scene, colliders, helper) {
   // LAGOON — a turquoise water plane as the visual focal point at the island's
   // center. NON-collidable (added directly to the group, never via place()).
   // Wired for animation: pushed onto group.userData.updatables so Game.js's frame
-  // loop calls water.update(dt) each tick. Kept flat at y≈0.05, away from spawns.
+  // loop calls water.update(dt) each tick. The WaterPlane's `.group` contains
+  // both the main water mesh and the foam ring at the waterline — add the
+  // whole group so the foam travels with the water on teardown.
   const lagoon = new WaterPlane(24, 16, 0x2fb4c8);
-  group.add(lagoon.mesh);
+  group.add(lagoon.group);
   if (!group.userData.updatables) group.userData.updatables = [];
   group.userData.updatables.push(lagoon);
+
+  // WET SAND STRIP — a darker damp-sand strip wrapping the lagoon, just below
+  // the foam ring. Implemented as 4 thin flat boxes (~0.05m tall) extending
+  // ~0.8m past the water edge on each side, in the damp-sand shade. NON-
+  // collidable: added directly to the group, never through place(). The foam
+  // ring (now part of WaterPlane) sits at y=0.04; these strips sit at y=0.025
+  // so they read as damp ground BEYOND the foam edge.
+  const wetSandMat = new THREE.MeshStandardMaterial({
+    color: COLORS.sandShade, flatShading: true, roughness: 0.95,
+  });
+  const lagoonHW = 12;   // water half-width (X)
+  const lagoonHD = 8;    // water half-depth (Z)
+  const wetMargin = 0.8; // how far past the water the wet sand extends
+  const wetThick = 0.05;
+  const wetY = 0.025;
+  // North (+Z) and South (-Z) strips: span the full water width + 2*margin,
+  // extend `margin` past the water edge.
+  const nsLen = (lagoonHW + wetMargin) * 2;
+  for (const z of [lagoonHD + wetMargin / 2, -(lagoonHD + wetMargin / 2)]) {
+    const strip = new THREE.Mesh(
+      new THREE.BoxGeometry(nsLen, wetThick, wetMargin),
+      wetSandMat,
+    );
+    strip.position.set(0, wetY, z);
+    strip.receiveShadow = true; strip.castShadow = false;
+    group.add(strip);
+  }
+  // East (+X) and West (-X) strips: span the water depth + 2*margin, extend
+  // `margin` past the water edge. They intentionally do NOT double-cover the
+  // corners — the small overlap zone reads as wet sand.
+  const ewLen = lagoonHD * 2; // just the water depth (corners covered by NS strips)
+  for (const x of [lagoonHW + wetMargin / 2, -(lagoonHW + wetMargin / 2)]) {
+    const strip = new THREE.Mesh(
+      new THREE.BoxGeometry(wetMargin, wetThick, ewLen),
+      wetSandMat,
+    );
+    strip.position.set(x, wetY, 0);
+    strip.receiveShadow = true; strip.castShadow = false;
+    group.add(strip);
+  }
+
+  // TINY RECEDING-WAVE RIPPLES — a few thin pale quads on the shore, just
+  // outside the foam ring, suggesting a wavelet wash on the wet sand. NON-
+  // collidable. Deterministic placement around the lagoon perimeter.
+  const rippleMat = new THREE.MeshStandardMaterial({
+    color: 0xfaf3df, transparent: true, opacity: 0.55, flatShading: true, roughness: 1.0,
+    depthWrite: false,
+  });
+  // 4 small ripple quads at fixed offsets around the lagoon (mirrored to (-x,-z)
+  // to keep the map's 180° rotational symmetry).
+  const waveSites = [
+    { x:  lagoonHW + 1.4, z:  lagoonHD - 0.6, w: 1.8, d: 0.6 }, // east-side wash
+    { x: -lagoonHW - 1.4, z:  lagoonHD - 0.6, w: 1.8, d: 0.6 }, // west (mirror)
+    { x:  0, z:  lagoonHD + 1.4, w: 0.6, d: 1.8 },             // south wash
+    { x:  0, z: -lagoonHD - 1.4, w: 0.6, d: 1.8 },             // north (mirror)
+  ];
+  for (const w of waveSites) {
+    const ripple = new THREE.Mesh(new THREE.PlaneGeometry(w.w, w.d), rippleMat);
+    ripple.rotation.x = -Math.PI / 2;
+    ripple.position.set(w.x, 0.045, w.z);
+    ripple.renderOrder = 1;
+    ripple.receiveShadow = false; ripple.castShadow = false;
+    group.add(ripple);
+  }
+
+  // UNDERWATER CAUSTIC PATCHES — light-colored flat quads UNDER the water
+  // surface (y=0.03) suggesting shallow sand patches / caustics visible
+  // through the translucent water. 2-4 small quads, NON-collidable.
+  const causticMat = new THREE.MeshStandardMaterial({
+    color: 0xd4ecc8, transparent: true, opacity: 0.45, flatShading: true, roughness: 1.0,
+    depthWrite: false,
+  });
+  const causticSites = [
+    { x: -4, z:  2, w: 1.6, d: 1.2 },
+    { x:  5, z: -3, w: 1.2, d: 1.6 },
+    { x:  2, z:  4, w: 1.0, d: 0.9 },
+    { x: -3, z: -4, w: 1.3, d: 1.0 },
+  ];
+  for (const c of causticSites) {
+    const caustic = new THREE.Mesh(new THREE.PlaneGeometry(c.w, c.d), causticMat);
+    caustic.rotation.x = -Math.PI / 2;
+    caustic.position.set(c.x, 0.03, c.z);
+    caustic.renderOrder = 0; // under the water
+    caustic.receiveShadow = false; caustic.castShadow = false;
+    group.add(caustic);
+  }
 
   // DAMP SHORELINE — a flat decorative ring around the lagoon reading as wet
   // sand. PURELY VISUAL: added straight to the group, never through place().
@@ -267,6 +355,26 @@ function build(scene, colliders, helper) {
     const { group: rg } = smallRock({ rockColor: COLORS.rock, seed: i + 1 });
     rg.position.set(s.x, 0, s.z);
     group.add(rg);
+  }
+
+  // WATER-EDGE ROCKS — a few small rock chunks sitting right at the waterline
+  // (just past the foam ring), reading as lagoon-edge stones. NON-collidable:
+  // added directly to the group. Mirrored to (-x,-z) for symmetry.
+  // Seeds are offset (i + 41) so the rocks here look distinct from the
+  // beach-scattered smallRock clusters above.
+  const edgeRockSpecs = [
+    { x:  lagoonHW + 1.0, z:  lagoonHD - 0.5 },   // SE shore
+    { x: -lagoonHW - 1.0, z:  lagoonHD - 0.5 },   // SW (mirror)
+    { x:  lagoonHW + 0.5, z: -lagoonHD + 0.2 },   // NE shore
+    { x: -lagoonHW - 0.5, z: -lagoonHD + 0.2 },   // NW (mirror)
+    { x:  0, z:  lagoonHD + 0.9 },                 // south center
+    { x:  0, z: -lagoonHD - 0.9 },                 // north center (mirror)
+  ];
+  for (let i = 0; i < edgeRockSpecs.length; i++) {
+    const e = edgeRockSpecs[i];
+    const { group: erg } = smallRock({ rockColor: COLORS.rock, seed: i + 41 });
+    erg.position.set(e.x, 0, e.z);
+    group.add(erg);
   }
 
   // GROUND SCATTER — beach grass tufts + driftwood logs + a few starfish

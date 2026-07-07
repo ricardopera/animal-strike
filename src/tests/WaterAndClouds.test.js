@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as THREE from 'three';
 
-// Stub a minimal document so the V5/V7 procedural canvas textures can build
-// (mirrors the MapBuildHelper.test.js approach). WaterPlane and Clouds guard on
-// `typeof document` and fall back to flat colors when absent, so these modules
-// are headless-safe either way; this stub exercises the real texture path.
+// Stub a minimal document so the V5/V6/V7 procedural canvas textures can
+// build (mirrors the MapBuildHelper.test.js approach). WaterPlane and Clouds
+// guard on `typeof document` and fall back to flat colors when absent, so
+// these modules are headless-safe either way; this stub exercises the real
+// texture path.
 beforeAll(() => {
   if (typeof globalThis.document === 'undefined') {
     globalThis.document = {
@@ -12,7 +13,7 @@ beforeAll(() => {
         width: 0, height: 0,
         getContext: () => ({
           fillRect: () => {}, clearRect: () => {}, beginPath: () => {},
-          ellipse: () => {}, lineTo: () => {}, moveTo: () => {}, stroke: () => {},
+          ellipse: () => {}, arc: () => {}, lineTo: () => {}, moveTo: () => {}, stroke: () => {},
           fill: () => {},
           createLinearGradient: () => ({ addColorStop: () => {} }),
           createRadialGradient: () => ({ addColorStop: () => {} }),
@@ -25,11 +26,19 @@ beforeAll(() => {
 const { WaterPlane } = await import('../fx/WaterPlane.js');
 const { Clouds } = await import('../fx/Clouds.js');
 
-describe('WaterPlane (V5)', () => {
-  it('constructs a flat translucent mesh and exposes group/mesh', () => {
+describe('WaterPlane (V6)', () => {
+  it('constructs a translucent water mesh with foam ring and exposes group/mesh/foam', () => {
     const water = new WaterPlane(40, 30);
     expect(water.mesh).toBeInstanceOf(THREE.Mesh);
-    expect(water.group).toBe(water.mesh);
+    expect(water.foam).toBeInstanceOf(THREE.Mesh);
+    // V6: .group is now a proper Group containing BOTH the main water and
+    // the foam ring. (V5 had .group === .mesh — that alias no longer holds.)
+    expect(water.group).toBeInstanceOf(THREE.Group);
+    expect(water.group).not.toBe(water.mesh);
+    // The group must contain the water mesh + foam ring (2 children minimum).
+    expect(water.group.children.length).toBeGreaterThanOrEqual(2);
+    expect(water.group.children).toContain(water.mesh);
+    expect(water.group.children).toContain(water.foam);
     // laid flat: rotation.x = -PI/2
     expect(water.mesh.rotation.x).toBeCloseTo(-Math.PI / 2);
     // just above ground
@@ -38,20 +47,74 @@ describe('WaterPlane (V5)', () => {
     expect(water.mesh.material.transparent).toBe(true);
     expect(water.mesh.material.opacity).toBeGreaterThan(0);
     expect(water.mesh.material.opacity).toBeLessThan(1);
+    // backface shadows: water doesn't cast on itself
+    expect(water.mesh.castShadow).toBe(false);
+    expect(water.mesh.receiveShadow).toBe(true);
   });
 
-  it('update(dt) animates without throwing and scrolls the texture offset', () => {
+  it('has displaced wave geometry: not all vertex-Z values are equal', () => {
+    const water = new WaterPlane(24, 16);
+    const pos = water.mesh.geometry.attributes.position;
+    expect(pos).toBeDefined();
+    // PlaneGeometry vertex order is (x,y,z) triples. The mesh is rotated
+    // -PI/2 around X before render, so the local-Z displacement we wrote
+    // with setZ() becomes world-Y at render time. Here we read it directly
+    // from `array`: index (i*3 + 2) is the local-Z (= displacement).
+    const arr = pos.array;
+    const zs = new Set();
+    for (let i = 2; i < arr.length; i += 3) {
+      // Quantize to avoid FP noise when comparing zero-like values.
+      zs.add(Math.round(arr[i] * 1000));
+    }
+    // With displacement there must be at least 2 distinct Z values among the
+    // vertices (an undisplaced plane would have all Z = 0 → exactly 1).
+    expect(zs.size).toBeGreaterThan(1);
+    // And none of them should blow past the documented ±0.05m envelope.
+    let maxAbs = 0;
+    for (let i = 2; i < arr.length; i += 3) {
+      const v = Math.abs(arr[i]);
+      if (v > maxAbs) maxAbs = v;
+    }
+    expect(maxAbs).toBeLessThanOrEqual(0.05);
+  });
+
+  it('update(dt) animates without throwing: scrolls texture + refreshes displacement + shimmer', () => {
     const water = new WaterPlane(20, 20);
     const beforeX = water._tex ? water._tex.offset.x : 0;
     expect(() => water.update(0.016)).not.toThrow();
     if (water._tex) {
       expect(water._tex.offset.x).toBeGreaterThan(beforeX);
     }
+    // After an update, the phase counter advanced.
+    expect(water._phase).toBeGreaterThan(0);
+    // The base color is preserved (contract: keeps the input color).
+    expect(water.mesh.material.color.getHex()).toBe(water.color);
+    // Emissive shimmer stays within a tight band (no strobing).
+    const ei = water.mesh.material.emissiveIntensity;
+    expect(ei).toBeGreaterThan(0.03);
+    expect(ei).toBeLessThan(0.07);
   });
 
-  it('dispose() releases geometry and material', () => {
+  it('dispose() releases water geometry, water material, foam geometry, foam material', () => {
     const water = new WaterPlane(10, 10);
     expect(() => water.dispose()).not.toThrow();
+  });
+
+  it('headless-safe: still constructs + updates when document is absent', () => {
+    // Temporarily pretend we have no document so the texture path is skipped.
+    const savedDoc = globalThis.document;
+    try {
+      delete globalThis.document;
+      const water = new WaterPlane(12, 8);
+      expect(water.mesh).toBeInstanceOf(THREE.Mesh);
+      // No texture built in headless mode → _tex is null and update() must
+      // still no-op cleanly on the texture branch.
+      expect(water._tex).toBeNull();
+      expect(() => water.update(0.016)).not.toThrow();
+      expect(() => water.dispose()).not.toThrow();
+    } finally {
+      globalThis.document = savedDoc;
+    }
   });
 });
 
