@@ -36,7 +36,7 @@ const SAT_SITES = [
 ];
 
 // Platform heights.
-const Y = { LOW: 30, MID: 37, HIGH: 44, TOP: 51, SAT_UPPER: 40, CATWALK: 26 };
+const Y = { LOW: 30, MID: 37, HIGH: 44, TOP: 51, SAT_UPPER: 40, CATWALK: 26, RING: 34 };
 
 // Staggered-height spawns across platforms/walkways (anti-camp). None on the
 // king's top deck (no free power-position spawns).
@@ -63,9 +63,9 @@ const WAYPOINTS = [
   // Satellite lowers.
   new THREE.Vector3(0, Y.LOW, 28), new THREE.Vector3(0, Y.LOW, -28),
   new THREE.Vector3(28, Y.LOW, 0), new THREE.Vector3(-28, Y.LOW, 0),
-  // Ring midpoints (satellite<->satellite) at y≈34.
-  new THREE.Vector3(20, 34, 20), new THREE.Vector3(-20, 34, -20),
-  new THREE.Vector3(20, 34, -20), new THREE.Vector3(-20, 34, 20),
+  // Ring midpoints (satellite<->satellite) at the ring-bridge height (Y.RING).
+  new THREE.Vector3(20, Y.RING, 20), new THREE.Vector3(-20, Y.RING, -20),
+  new THREE.Vector3(20, Y.RING, -20), new THREE.Vector3(-20, Y.RING, 20),
 ];
 
 // Author the geometry once. `place`/`placePair` come from the caller — either
@@ -146,10 +146,10 @@ function buildSpoke(placePair, cx, cz) {
 // (ax,az)-(bx,bz) is the diagonal; here authored as a box spanning the diagonal
 // midpoint with approximate axis-aligned extents (good enough for collision).
 function buildRingBridge(placePair, ax, az) {
-  // The two satellites this bridge connects are (ax,az) and (-ax,-az); midpoint
-  // is the origin. Author two half-bridges from each satellite toward center so
-  // symmetry holds and players cross at y≈34.
-  placePair(10, 0.4, 2, COLORS.plankDark, ax / 2, 34, az / 2, 'planks');
+  // One half-bridge from the (ax,az) satellite toward the center, at ring
+  // height. placePair stamps its 180° twin toward the (-ax,-az) satellite, so
+  // the two halves meet at the origin and players cross at Y.RING.
+  placePair(10, 0.4, 2, COLORS.plankDark, ax / 2, Y.RING, az / 2, 'planks');
 }
 
 // Stealth catwalk: thin metal grate under the ring at y=CATWALK.
@@ -195,10 +195,12 @@ function build(scene, colliders, helper) {
     }
   }
 
-  // LANTERNS on safe routes (spokes): lit = safe cue. Place along each spoke.
+  // LANTERNS on safe routes (spokes): lit = safe cue. Half-set — each off-axis
+  // site is mirrored to (-lx,-lz) by the loop; on-axis sites ([0,7]/[7,0]) are
+  // their own 180° partners so they stamp only once.
   const lanternSites = [
-    [0, 7], [0, -7], [0, 21], [0, -21],   // north/south spoke
-    [7, 0], [-7, 0], [21, 0], [-21, 0],   // east/west spoke
+    [0, 7], [0, 21],   // +Z half of the north/south spoke (-> mirrors to -Z)
+    [7, 0], [21, 0],   // +X half of the east/west spoke (-> mirrors to -X)
   ];
   for (const [lx, lz] of lanternSites) {
     const { group: g } = lantern({ baseY: Y.LOW + 0.5, glowColor: COLORS.lantern });
@@ -211,7 +213,7 @@ function build(scene, colliders, helper) {
 
   // WALKWAY DETAIL — rope strands on ring bridges, rivets on catwalks.
   for (const s of SAT_SITES) {
-    { const { group: g } = ropeStrands({ baseY: 34, w: 10, d: 2 });
+    { const { group: g } = ropeStrands({ baseY: Y.RING, w: 10, d: 2 });
       g.position.set(s.x / 2, 0, s.z / 2); g.rotation.y = Math.atan2(s.z, s.x); group.add(g); }
     { const { group: g } = metalRivets({ baseY: Y.CATWALK, w: 9, d: 1.2 });
       g.position.set(s.x / 2, 0, s.z / 2); g.rotation.y = Math.atan2(s.z, s.x); group.add(g); }
@@ -220,8 +222,10 @@ function build(scene, colliders, helper) {
   // CLOUDS above the canopy for depth (drifting billboards).
   new Clouds(group, { count: 8, area: 160, height: 70, color: 0xffffff, opacity: 0.85 });
 
-  // Contact shadows under platforms so they don't float.
-  for (const y of [Y.LOW, Y.MID, Y.HIGH, Y.TOP]) helper.contactShadow(group, 0, 0, 11, 11);
+  // NOTE: no contactShadow() decals here. They are authored for flat-ground
+  // maps (the decal is pinned to y=0.02, just above a ground slab). Canopy has
+  // no ground — platforms float at y=30-51 above a fog void — so a ground-pinned
+  // decal would sit 30m below the action, beneath the kill plane, invisible.
 
   scene.add(group);
   return group;
