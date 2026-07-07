@@ -7,6 +7,7 @@ import { WEAPONS } from '../config/Weapons.js';
 import { WeaponController } from '../player/WeaponController.js';
 import { AIController } from '../ai/AIController.js';
 import { getRandomSpawn } from '../world/SpawnPoints.js';
+import { checkFallDeath } from '../world/FallDeath.js';
 import { ANIMAL_IDS } from '../config/Animals.js';
 import { MOVEMENT as M } from '../config/Movement.js';
 
@@ -167,10 +168,11 @@ export class Sim {
         if (typeof it.pitch === 'number') p.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, it.pitch));
       }
     }
-    // Movement (humans + bots share tickMovement)
+    // Movement (humans + bots share tickMovement) + fall death (killY maps)
     for (const p of this.players) {
       if (!p.alive) continue;
       tickMovement(p, dt, this.colliders);
+      if (p.alive && checkFallDeath(p, this.activeMap)) this._killByFall(p);
     }
     // Bot AI
     for (const bot of this.bots) {
@@ -280,6 +282,14 @@ export class Sim {
     const sp = getRandomSpawn(others, this.activeMap.spawnPoints);
     player.position.copy(sp); player.velocity.set(0, 0, 0);
     player.health = player.maxHealth; player.alive = true;
+  }
+  // Environmental fall death (server-side parity with Game.killByFall). No frag,
+  // no shooter — just marks the player dead and queues a normal respawn.
+  _killByFall(player) {
+    player.alive = false;
+    player.health = 0;
+    player.deaths += 1;
+    this.respawnTimers.set(player.id, RESPAWN_DELAY);
   }
   _freeSpawn(occupied = []) { return getRandomSpawn(occupied, this.activeMap.spawnPoints); }
   _endMatch() { this.match.active = false; this.match.over = true; this.events.push({ k: 'matchEnd' }); }
