@@ -141,6 +141,11 @@ export class Game {
     this.colliders = new ColliderStore();
     this.buildHelper = makeBuildHelper();
     this.arenaGroup = null;            // the THREE.Group returned by map.build (for teardown)
+    // Per-frame animated props registered by the active map's build() (WaterPlane,
+    // Clouds, ...). Maps push updatables onto the returned group's
+    // userData.updatables; loadMap() copies that array here so the frame loop can
+    // drain it without maps needing a handle to the Game.
+    this.updatables = [];
     this.activeMap = MAPS[0];          // default map; MainMenu / rotation can change it
     this.rotationIndex = 0;
     this.rotateMaps = true;
@@ -313,13 +318,18 @@ export class Game {
   loadMap(map) {
     if (this.arenaGroup) {
       this.scene.remove(this.arenaGroup);
-      // dispose geometries/materials to avoid GPU leaks across many matches
+      // dispose geometries/materials to avoid GPU leaks across many matches.
+      // Also dispose material textures (procedural canvas maps from WaterPlane,
+      // Clouds, contact shadows, etc.) — the original teardown dropped these.
       this.arenaGroup.traverse(o => {
-        if (o.isMesh) {
-          o.geometry.dispose();
+        if (o.isMesh || o.isSprite) {
+          if (o.geometry) o.geometry.dispose();
           if (o.material) {
-            if (Array.isArray(o.material)) o.material.forEach(m => m.dispose());
-            else o.material.dispose();
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            for (const m of mats) {
+              if (m.map) m.map.dispose();
+              m.dispose();
+            }
           }
         }
       });
@@ -335,6 +345,10 @@ export class Game {
     // these fields fall back to the rig defaults so they render identically.
     this._applyMapLighting(map.palette);
     this.arenaGroup = map.build(this.scene, this.colliders, this.buildHelper);
+    // Collect this map's per-frame animated props (WaterPlane/Clouds/...) off the
+    // returned group. Maps stay decoupled from Game internals: they just push
+    // updatables onto group.userData.updatables during build().
+    this.updatables = [...(this.arenaGroup.userData.updatables || [])];
   }
 
   // Build a PMREM cubemap environment from the sky gradient and assign it to
@@ -763,6 +777,11 @@ export class Game {
     this.flashes.update(realDt);
     this.sparks.update(realDt);
     this.damageNumbers.update(realDt);
+    // Per-frame map updatables (animated water, drifting clouds, ...). Mirrors
+    // the single-player frame(); guarded so one failure can't break MP rendering.
+    for (const u of this.updatables) {
+      try { u.update(realDt); } catch (e) { /* keep rendering */ }
+    }
     // Camera position = interpolated server position + eye height.
     this.camera.position.set(ls.x, ls.y + M.EYE_HEIGHT, ls.z);
     // Camera rotation = local mouse-look (instant, NOT from snapshots).
@@ -879,6 +898,11 @@ export class Game {
     this.flashes.update(realDt);
     this.sparks.update(realDt);
     this.damageNumbers.update(realDt);
+    // Per-frame map updatables (animated water, drifting clouds, ...). Each is
+    // guarded so one bad updatable can't break the whole render loop.
+    for (const u of this.updatables) {
+      try { u.update(realDt); } catch (e) { /* keep rendering */ }
+    }
 
     // Bot views
     for (const bot of this.bots) {
