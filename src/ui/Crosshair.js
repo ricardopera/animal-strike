@@ -25,6 +25,8 @@ export class Crosshair {
     this._baseSpread = 20; // px set by setSpread (movement/weapon base)
     this._bloom = 0;       // transient fire-recoil expansion (decays to 0)
     this._bloomRaf = null; // active rAF loop id (null when idle)
+    this._bloomStart = 0;  // peak bloom the decay loop is easing from
+    this._bloomT0 = 0;     // decay loop start timestamp (reset on each re-trigger)
   }
 
   // Apply the current visible size = base + bloom.
@@ -48,12 +50,14 @@ export class Crosshair {
     if (add <= 0) return;
     this._bloom = Math.max(this._bloom, add);
     if (this._bloom <= 0) return;
+    // Reset the decay clock against the CURRENT peak each call so rapid fire
+    // holds the crosshair open instead of collapsing mid-burst.
+    this._bloomStart = this._bloom;
+    this._bloomT0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    this._bloomDur = Math.max(16, recoverMs);
     this._apply();
-    if (this._bloomRaf != null) return; // decay loop already running
+    if (this._bloomRaf != null) return; // decay loop already running; it reads the refreshed fields above
 
-    const startBloom = this._bloom;
-    const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-    const dur = Math.max(16, recoverMs);
     const tick = () => {
       if (this._bloom <= 0) {
         this._bloom = 0;
@@ -62,8 +66,8 @@ export class Crosshair {
         return;
       }
       const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-      const k = 1 - Math.min(1, (now - t0) / dur); // 1 -> 0 over the window
-      this._bloom = startBloom * Math.max(0, k);
+      const k = 1 - Math.min(1, (now - this._bloomT0) / this._bloomDur); // 1 -> 0 over the window
+      this._bloom = this._bloomStart * Math.max(0, k);
       if (this._bloom < 0.4) this._bloom = 0;
       this._apply();
       if (this._bloom <= 0) {
