@@ -1143,9 +1143,12 @@ export class Game {
           if (shooter.score > 0 && shooter.score % 5 === 0 && shooter.score !== this._lastFragMilestone) {
             this._lastFragMilestone = shooter.score;
             this.voice.play('fragMilestone');
-            // Switch to the tense clutch track when the local player is within 2
-            // frags of winning (close-to-the-finish feel). No-op if already clutch.
-            if (shooter.isLocal && shooter.score >= this.match.fragTarget - 2) {
+            // Switch to the tense clutch track when the local player is near the
+            // finish. Milestones step every 5 frags, so the threshold must clear the
+            // previous milestone (fragTarget-5 catches the (fragTarget-5)-frag
+            // milestone) but stay below the winning score, which endMatch()
+            // immediately overrides. No-op if already on clutch.
+            if (shooter.isLocal && shooter.score >= this.match.fragTarget - 5 && shooter.score < this.match.fragTarget) {
               this.music.play('clutch');
             }
           }
