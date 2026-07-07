@@ -84,29 +84,35 @@ export function palmTree({
   const halfH = height;
 
   // -----------------------------------------------------------------------
-  // FRONDS — 8 fronds, each a thin rib with ~12 leaflets.
+  // FRONDS — each frond is ONE long leaf blade that arches downward, built
+  // from a chain of short tapered segments. Each successive segment is
+  // rotated a few more degrees downward, so the whole blade curves from the
+  // crown out and then down (a coconut-palm silhouette), instead of a stiff
+  // rib with perpendicular leaflets.
   //
-  // Layout: 8 evenly-spaced azimuths, each frond parented to a pivot Group
-  // anchored at the trunk top. The pivot rotates around Y (azimuth) then tilts
-  // down around its local X (~42° droop). Inside the pivot:
-  //   - A central rib (thin elongated box) extends along +X from the pivot.
-  //   - 12 leaflets (BoxGeometry 0.05 × 0.05 × leafLen) alternate left/right
-  //     along the rib, sized like a feather (peak length mid-rib, taper at
-  //     both ends). Each leaflet is tilted UP at the tip ~22° to suggest
-  //     recurved droop.
+  // Layout: 8 fronds on evenly-spaced azimuths. Each frond is parented to a
+  // pivot Group anchored at the trunk top; the pivot sets the azimuth (Y) and
+  // the initial outward tilt (X, the "takeoff" angle). Inside the pivot, a
+  // nested chain of segment Groups composes the curve: each child segment is
+  // positioned at the tip of the previous one and tilted down a bit more, so
+  // the cumulative rotation grows toward the frond tip.
   // Per-frond tone variation: 3 variants (base, light, dark) cycled so the
   // crown reads as a mix of young and older fronds.
   const frondCount = 8;
-  const frondLen = 3.2;
-  const ribW = 0.10;
-  const ribH = 0.07;
-  const leafletCount = 12;
-  const maxLeafletLen = 0.62;
-  // Mean droop angle + per-frond offset for variation.
-  const droopMean = -Math.PI / 180 * 42;
-  const droopJitter = Math.PI / 180 * 5;
-  // Leaflet tip-up tilt (recurved droop).
-  const leafletTipUp = Math.PI / 180 * 22;
+  const segCount = 6;            // segments per frond (more = smoother curve)
+  const segLen = 0.62;           // length of each segment along local +X
+  // How much each segment droops relative to the previous one (radians). A
+  // gentle, increasing curve: a bit at the base, more toward the tip.
+  const segDroopStep = Math.PI / 180 * 11;
+  // The blade's width (Z) tapers from base to tip; height (Y) stays slim.
+  const bladeWBase = 0.42;
+  const bladeWTip = 0.10;
+  const bladeH = 0.05;
+  // Mean takeoff angle (the pivot's X tilt) + per-frond jitter so the 8 fronds
+  // don't all leave the crown at the identical angle. Negative = pointing
+  // outward and slightly up before the curve pulls the tip down.
+  const takeoffMean = -Math.PI / 180 * 18;
+  const takeoffJitter = Math.PI / 180 * 8;
   // Three leaf tones: base / +12% lighter / -10% darker. Mixed across the
   // crown so the silhouette reads as a mix of young and old fronds.
   const leafLight = shadeHex(leafColor, 0.12);
@@ -114,45 +120,39 @@ export function palmTree({
   const leafTones = [leafColor, leafLight, leafColor, leafDark, leafColor, leafLight, leafColor, leafDark];
   for (let i = 0; i < frondCount; i++) {
     const az = (i / frondCount) * Math.PI * 2;
-    // Per-frond droop jitter — irrational multiplier so the 8 fronds don't
+    // Per-frond takeoff jitter — irrational multiplier so the 8 fronds don't
     // sync up into a regular pattern.
-    const droop = droopMean + Math.sin(i * 1.31) * droopJitter;
+    const takeoff = takeoffMean + Math.sin(i * 1.31) * takeoffJitter;
     const tone = leafTones[i % leafTones.length];
 
     // Pivot at the trunk top; rotation: first around Y (azimuth), then around
-    // local X (droop). Order matters in Euler — set z=0 explicitly so the
-    // default XYZ order applies cleanly.
+    // local X (takeoff tilt). Order matters in Euler — set z=0 explicitly so
+    // the YXZ order applies cleanly.
     const pivot = new THREE.Group();
     pivot.position.set(0, halfH, 0);
-    pivot.rotation.set(droop, az, 0, 'YXZ');
+    pivot.rotation.set(takeoff, az, 0, 'YXZ');
 
-    // Central rib: thin elongated box along +X, shifted so its BASE sits at
-    // the pivot and it extends outward.
-    const rib = boxMesh(frondLen, ribH, ribW, tone);
-    rib.position.set(frondLen / 2, 0, 0);
-    pivot.add(rib);
-
-    // Leaflets: alternate ±Z along the rib, with feather-tapered lengths.
-    for (let j = 0; j < leafletCount; j++) {
-      const t = (j + 1) / (leafletCount + 1); // 0..1 along rib, skipping ends
-      const xPos = t * frondLen;
-      // Feather profile: leaflet length peaks mid-rib, tapers to both ends.
-      const leafLen = maxLeafletLen * Math.sin(t * Math.PI);
-      // Side: +1 = right, -1 = left. Slight darker tip tint as j → ends.
-      const side = j % 2 === 0 ? 1 : -1;
-      // Leaflet box: thin in X (depth along rib), thin in Y (height), long in
-      // Z (length sticking out perpendicular to rib).
-      const leaflet = boxMesh(0.05, 0.05, leafLen, tone);
-      // Position the leaflet's center outward from the rib by ~leafLen/2 +
-      // a small gap so it visibly emerges from the rib.
-      const offsetZ = side * (leafLen / 2 + 0.04);
-      leaflet.position.set(xPos, 0.01, offsetZ);
-      // Tip-up rotation: rotate around the rib's local X axis. In Three.js's
-      // right-handed frame, positive X rotation tilts +Z downward, so we use
-      // −angle for side=+1 (and +angle for side=−1) to lift both tips skyward
-      // — a recurved-droop silhouette.
-      leaflet.rotation.x = -side * leafletTipUp;
-      pivot.add(leaflet);
+    // Build the curved blade as a chain: `link` is the current segment's
+    // parent group; each iteration nests a new group at the previous tip and
+    // tilts it down a bit more, then adds the blade box inside.
+    let link = pivot;
+    for (let j = 0; j < segCount; j++) {
+      // Width tapers from base (j=0) to tip (j=segCount-1).
+      const t = j / Math.max(1, segCount - 1);
+      const w = bladeWBase + (bladeWTip - bladeWBase) * t;
+      // The blade box for this segment: long in X, thin in Y, `w` wide in Z.
+      const blade = boxMesh(segLen, bladeH, w, tone);
+      blade.position.set(segLen / 2, 0, 0); // base at the link origin, extends +X
+      link.add(blade);
+      // Nested group for the next segment, positioned at THIS segment's tip
+      // and tilted further downward so the curve accumulates.
+      const next = new THREE.Group();
+      next.position.set(segLen, 0, 0);
+      // Each segment droops a little more than the one before it. A tiny
+      // deterministic per-segment variation keeps the curve organic.
+      next.rotation.x = -(segDroopStep + Math.sin(j * 1.7) * (Math.PI / 180 * 2));
+      link.add(next);
+      link = next;
     }
 
     group.add(pivot);

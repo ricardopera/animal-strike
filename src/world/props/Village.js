@@ -27,8 +27,8 @@ export function cottage({
   const walls = boxMesh(w, wallH, d, wallColor, 0, wallH / 2, 0);
   group.add(walls);
 
-  // Peaked gable roof: two angled boxes forming an inverted-V. The roof sits
-  // on top of the walls; its peak runs along the Z axis.
+  // Peaked gable roof: two angled boxes meeting at a central ridge (an upward
+  // "^"). The roof sits on top of the walls; its peak runs along the Z axis.
   const roofThick = 0.3;
   const roofOverhang = 0.6;
   const roofSpan = w / 2 + roofOverhang; // half-width of the roof slope
@@ -38,14 +38,17 @@ export function cottage({
   const slopeLen = Math.sqrt(roofSpan * roofSpan + roofPitch * roofPitch);
   const slopeAngle = Math.atan2(roofPitch, roofSpan);
   const roofY = wallH; // base of roof = top of walls
-  // Left slope
+  // Left slope (x<0): rotate by -slopeAngle so it rises from the left eave UP
+  // toward the central ridge. (Positive slopeAngle here would make it dip
+  // toward the center — a valley/butterfly roof.)
   const left = boxMesh(roofThick, slopeLen, roofLen, roofColor);
-  left.rotation.z = slopeAngle;
+  left.rotation.z = -slopeAngle;
   left.position.set(-roofSpan / 2, roofY + roofPitch / 2, 0);
   group.add(left);
-  // Right slope
+  // Right slope (x>0): rotate by +slopeAngle so it rises from the right eave
+  // UP toward the central ridge.
   const right = boxMesh(roofThick, slopeLen, roofLen, roofColor);
-  right.rotation.z = -slopeAngle;
+  right.rotation.z = slopeAngle;
   right.position.set(roofSpan / 2, roofY + roofPitch / 2, 0);
   group.add(right);
 
@@ -89,18 +92,21 @@ export function well({
   const postR = cylMesh(0.1, 0.1, postH, postColor, rimR - 0.15, rimH + postH / 2, 0, 6);
   group.add(postL, postR);
 
-  // Pitched roof over the posts: two angled boxes forming an inverted-V along Z.
+  // Pitched roof over the posts: two angled boxes meeting at a central ridge
+  // (an upward "^") running along Z. Rotation signs chosen so each slope rises
+  // from its outer eave UP toward the center (positive slopeAngle on the right,
+  // negative on the left) — the opposite signs would form a valley roof.
   const roofSpan = rimR + 0.3;
   const roofPitch = 0.9;
   const slopeLen = Math.sqrt(roofSpan * roofSpan + roofPitch * roofPitch);
   const slopeAngle = Math.atan2(roofPitch, roofSpan);
   const roofBaseY = rimH + postH;
   const left = boxMesh(0.2, slopeLen, rimR * 2 + 0.4, shadeHex(stoneColor, -0.1));
-  left.rotation.z = slopeAngle;
+  left.rotation.z = -slopeAngle;
   left.position.set(-roofSpan / 2, roofBaseY + roofPitch / 2, 0);
   group.add(left);
   const right = boxMesh(0.2, slopeLen, rimR * 2 + 0.4, shadeHex(stoneColor, -0.1));
-  right.rotation.z = -slopeAngle;
+  right.rotation.z = slopeAngle;
   right.position.set(roofSpan / 2, roofBaseY + roofPitch / 2, 0);
   group.add(right);
 

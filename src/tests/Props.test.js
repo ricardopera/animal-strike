@@ -116,7 +116,7 @@ describe('palmTree', () => {
     expect(greenCount.n).toBeGreaterThan(0);
   });
 
-  it('is deterministic in positions too (segment offsets + leaflet placements)', () => {
+  it('is deterministic in positions too (trunk segments + frond blade chains)', () => {
     // Beyond child count, the actual world transforms must be identical for
     // two calls with the same opts — proves no unseeded Math.random leaks in.
     const a = palmTree({ height: 7, trunkColor: 0x8a6a44, leafColor: 0x2faa55 });
@@ -138,22 +138,34 @@ describe('palmTree', () => {
     }
   });
 
-  it('has leaflets attached to frond ribs (many thin elongated boxes in the crown)', () => {
-    // The rebuilt palm should have ~8 fronds × ~12 leaflets = ~96 leaflet
-    // boxes, plus 8 rib boxes. That alone is ~104 thin elongated boxes,
-    // far more than the 6 flat boxes of the old fan-blade fronds.
+  it('has curved-blade fronds (each frond a chain of tapered blade segments)', () => {
+    // Each frond is ONE long leaf that arches down, built from a chain of
+    // short tapered segments (~6 per frond). With 8 fronds that is ~48 blade
+    // boxes — far more than the 6 flat boxes of the original fan-blade fronds,
+    // and each blade is a tapered leaf segment (width shrinks base→tip), not a
+    // feather-skeleton rib+leaflet.
     const { group } = palmTree();
     const boxes = [];
     group.traverse(o => {
       if (o.isMesh && o.geometry?.type === 'BoxGeometry') boxes.push(o);
     });
-    expect(boxes.length).toBeGreaterThan(50);
-    // Ribs are long boxes (~3.2m), leaflets are short (~0.6m). Verify both
-    // exist by checking the BoxGeometry extents distribution.
-    const ribsLike = boxes.filter(b => b.geometry.parameters.width >= 2.5).length;
-    const leafletLike = boxes.filter(b => b.geometry.parameters.depth >= 0.3 && b.geometry.parameters.depth <= 1.0).length;
-    expect(ribsLike).toBeGreaterThanOrEqual(8);  // at least 8 frond ribs
-    expect(leafletLike).toBeGreaterThanOrEqual(50); // many leaflets
+    // ~8 fronds × ~6 segments = ~48 blade boxes (+ a few trunk/coconut bits
+    // use other geometry types). Crown blade boxes dominate the box count.
+    expect(boxes.length).toBeGreaterThanOrEqual(40);
+    // Blade segments: short in X (~0.62m), thin in Y (~0.05m), and a Z width
+    // that tapers across the frond (between ~0.10 tip and ~0.42 base). Count
+    // boxes whose X (width) is short and whose Z (depth) is in the blade range.
+    const blades = boxes.filter(b => {
+      const p = b.geometry.parameters;
+      return p.width > 0.4 && p.width < 0.8    // segLen ~0.62
+        && p.height < 0.1                       // thin blade
+        && p.depth >= 0.08 && p.depth <= 0.5;   // tapered blade width
+    });
+    expect(blades.length).toBeGreaterThanOrEqual(40); // ~8 fronds × ~6 segs
+    // Confirm the taper exists: at least two distinct blade widths are present
+    // (base segments are wider than tip segments).
+    const widths = new Set(blades.map(b => Math.round(b.geometry.parameters.depth * 100)));
+    expect(widths.size).toBeGreaterThanOrEqual(2);
   });
 
   it('places coconuts as spheres clustered near the crown top', () => {
