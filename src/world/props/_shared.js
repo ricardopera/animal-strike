@@ -35,6 +35,16 @@ export function sphereMesh(r, color, x = 0, y = 0, z = 0, segments = 12, { flatS
   return mesh;
 }
 
+// A PBR cone mesh (used for tree canopies, lantern caps).
+export function coneMesh(r, h, color, x = 0, y = 0, z = 0, segments = 8, { flatShading = true, roughness = 0.9 } = {}) {
+  const material = new THREE.MeshStandardMaterial({ color, flatShading, roughness });
+  const mesh = new THREE.Mesh(new THREE.ConeGeometry(r, h, segments), material);
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
 // Color shading: amt<0 darkens, amt>0 lightens. Returns a hex int. (Local copy
 // so props don't depend on MapBuildHelper.)
 export function shadeHex(h, amt) {
