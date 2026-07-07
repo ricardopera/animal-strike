@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { MAPS, getMapById } from '../world/Maps.js';
 
 describe('Maps registry', () => {
-  it('has exactly 5 maps in the expected order', () => {
-    expect(MAPS).toHaveLength(5);
-    expect(MAPS.map(m => m.id)).toEqual(['plaza', 'foundry', 'dustbowl', 'haven', 'tropic']);
+  it('has exactly 6 maps in the expected order', () => {
+    expect(MAPS).toHaveLength(6);
+    expect(MAPS.map(m => m.id)).toEqual(['plaza', 'foundry', 'dustbowl', 'haven', 'tropic', 'canopy']);
   });
 
   it('MAPS[0] is the default (plaza)', () => {
