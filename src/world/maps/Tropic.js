@@ -57,9 +57,11 @@ const COLORS = {
 // beach palms, all within the [-40,40] arena.
 const PALM_SITES = [
   // --- Perimeter ring palms (8 sites -> 16 palms) lining the beach edge. ---
+  // Each site is off-axis (x≠0 && z≠0) and no two sites are 180° rotational
+  // twins of each other, so every site yields exactly 2 DISTINCT palms.
   { x: -34, z: -10 },   // west edge
   { x: -34, z: 16 },    // west edge
-  { x: 34, z: 10 },     // east edge (its mirror (-34,-10) closes the west pair)
+  { x: 36, z: 24 },     // east edge
   { x: -10, z: -34 },   // north edge
   { x: 16, z: -34 },    // north edge
   { x: -34, z: 34 },    // NW corner
@@ -69,18 +71,23 @@ const PALM_SITES = [
   // --- Corner / cluster palms (4 sites -> 8 palms) tightening the corners. ---
   { x: -30, z: 26 },    // NW cluster
   { x: 26, z: 30 },     // NE cluster
-  { x: 30, z: -26 },    // SE cluster
-  { x: -26, z: -30 },   // SW cluster
+  { x: 36, z: -20 },    // SE edge (mirror -> west edge)
+  { x: -22, z: -36 },   // SW edge (mirror -> NE edge)
 
   // --- Scattered beach palms (4 sites -> 8 palms) in open beach areas. ---
   { x: -20, z: 8 },     // west-mid beach
   { x: 22, z: -8 },     // east-mid beach
   { x: 8, z: 22 },      // toward lagoon south shore
-  { x: -8, z: -22 },    // toward lagoon north shore
+  { x: 14, z: 36 },     // north shore (mirror -> south shore)
 ];
 
 // Authoritative palm count, exported so a test can assert the ">= 30 palms"
 // requirement directly: every half-site mirrors to exactly 2 palms.
+// PALM_SITES is exported so the test can also verify that every half-site is
+// off-axis and that no two half-sites are 180° rotational twins (which would
+// stack two palms on the same spot — the count would look right but the trees
+// wouldn't be visually distinct).
+export const PALM_SITES_RO = PALM_SITES;
 export const PALM_HALF_COUNT = PALM_SITES.length;
 export const PALM_TOTAL_COUNT = PALM_SITES.length * 2;
 
