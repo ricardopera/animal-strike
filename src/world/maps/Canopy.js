@@ -1,33 +1,238 @@
 import * as THREE from 'three';
 import { MapDefinition } from '../MapDefinition.js';
 import { makeBuildHelper } from '../MapBuildHelper.js';
+import { canopyFoliage, treehouseInterior, lantern, ropeStrands, metalRivets } from '../props/Treehouse.js';
+import { Clouds } from '../../fx/Clouds.js';
 
-// Canopy — high-altitude treehouse arena (STUB: full geometry in Task 8).
-// Tall ancient trees, multi-level platforms, varied walkways; falling = death.
-const SPAWN_POINTS = [new THREE.Vector3(0, 30, 0)];
-const WAYPOINTS = [new THREE.Vector3(0, 30, 0)];
+// Canopy — a high-altitude treehouse arena on towering ancient trees. Players
+// fight across stacked platforms and varied suspended walkways (planks, rope,
+// metal). Parkour-friendly: narrow ledges + skill gaps reward movement; falling
+// off any structure is instant death (killY). The trees are so tall the ground
+// never renders — the void below is fog-occluded and IS the death mechanic.
+//
+// 180°-rotational symmetry via placePair (no-op mirror when x===0 && z===0).
+// authorGeometry is authored ONCE and run in two modes: client build() (meshes)
+// and server colliderBoxes (AABBs). Headless-safe: no document/mesh touched
+// at module load except the collider pass.
 
-function authorGeometry(place) {
-  // Temporary single platform so the map is valid; replaced in Task 8.
-  place(8, 1, 8, 0x6a4a2a, 0, 30, 0, 'planks');
+const COLORS = {
+  bark:    0x4a3a26,   // mossy dark bark
+  barkLit: 0x5a4a30,   // lighter bark highlight
+  moss:    0x3a5a36,   // trunk moss accent
+  plank:   0x7a5a38,   // weathered walkway planks (safe routes)
+  plankDark: 0x5a4028, // older planks
+  rope:    0xb89a5a,   // rope bridge strands
+  metal:   0x6a6a72,   // catwalk metal
+  leaf:    0x2a5a3a,   // canopy foliage
+  leafLit: 0x3a7a4a,   // lighter foliage tier
+  wall:    0x6a4a2a,   // treehouse walls
+  lantern: 0xffcf6a,   // safe-route lantern glow
+};
+
+// Satellite half-set: each site mirrors to (-x,-z) for 4 total (N/S/E/W).
+const SAT_SITES = [
+  { x:  0, z: 28 },   // north satellite (mirror -> south)
+  { x: 28, z: 0 },    // east satellite (mirror -> west)
+];
+
+// Platform heights.
+const Y = { LOW: 30, MID: 37, HIGH: 44, TOP: 51, SAT_UPPER: 40, CATWALK: 26 };
+
+// Staggered-height spawns across platforms/walkways (anti-camp). None on the
+// king's top deck (no free power-position spawns).
+const SPAWN_POINTS = [
+  // Satellite lowers (y≈30).
+  new THREE.Vector3(0, 31, 22), new THREE.Vector3(0, 31, -22),
+  new THREE.Vector3(22, 31, 0), new THREE.Vector3(-22, 31, 0),
+  // King mid levels (y≈34, 38).
+  new THREE.Vector3(4, 35, 4), new THREE.Vector3(-4, 35, -4),
+  new THREE.Vector3(4, 39, -4), new THREE.Vector3(-4, 39, 4),
+  // Satellite uppers near treehouses (y≈40).
+  new THREE.Vector3(0, 41, 24), new THREE.Vector3(0, 41, -24),
+  new THREE.Vector3(24, 41, 0), new THREE.Vector3(-24, 41, 0),
+];
+
+// Waypoints ONLY on safe walkable surfaces (spokes + ring + king hub). Bots
+// stay on lit routes; risky shortcuts are player-only.
+const WAYPOINTS = [
+  // King hub at each level.
+  new THREE.Vector3(0, Y.LOW, 0), new THREE.Vector3(0, Y.MID, 0),
+  // Spoke midpoints (king<->satellite).
+  new THREE.Vector3(0, Y.LOW, 14), new THREE.Vector3(0, Y.LOW, -14),
+  new THREE.Vector3(14, Y.LOW, 0), new THREE.Vector3(-14, Y.LOW, 0),
+  // Satellite lowers.
+  new THREE.Vector3(0, Y.LOW, 28), new THREE.Vector3(0, Y.LOW, -28),
+  new THREE.Vector3(28, Y.LOW, 0), new THREE.Vector3(-28, Y.LOW, 0),
+  // Ring midpoints (satellite<->satellite) at y≈34.
+  new THREE.Vector3(20, 34, 20), new THREE.Vector3(-20, 34, -20),
+  new THREE.Vector3(20, 34, -20), new THREE.Vector3(-20, 34, 20),
+];
+
+// Author the geometry once. `place`/`placePair` come from the caller — either
+// mesh-based (client build) or AABB-based (server colliderBoxes).
+function authorGeometry(place, placePair) {
+  // --- KING TREE (center, own mirror) ---
+  // Trunk: a tall thin box from deep in the fog up past the top platform.
+  place(3, 56, 3, COLORS.bark, 0, 28, 0, 'wood');
+  // 4 stacked platform decks.
+  for (const y of [Y.LOW, Y.MID, Y.HIGH, Y.TOP]) {
+    place(10, 0.6, 10, COLORS.plank, 0, y, 0, 'planks');
+  }
+  // Internal stair-steps connecting king levels (1m rise each — hop-up ladder).
+  // A diagonal run of small boxes from LOW -> MID -> HIGH -> TOP.
+  for (let lvl = 0; lvl < 3; lvl++) {
+    const baseY = [Y.LOW, Y.MID, Y.HIGH][lvl];
+    const nextY = [Y.MID, Y.HIGH, Y.TOP][lvl];
+    const steps = Math.round((nextY - baseY) / 1);
+    for (let s = 1; s <= steps; s++) {
+      const yy = baseY + s * 1;
+      const xx = -3.5 + s * (3 / steps);
+      place(1.4, 0.3, 1.4, COLORS.plankDark, xx, yy, 3, 'planks');
+    }
+  }
+
+  // --- SATELLITE TREES (4 via half-set) ---
+  for (const s of SAT_SITES) {
+    buildSatellite(place, placePair, s.x, s.z);
+  }
+
+  // --- SPOKES: safe wide planks king<->satellite at y=LOW (lantern-lit in build) ---
+  buildSpoke(placePair, 0, 28);   // north/south
+  buildSpoke(placePair, 28, 0);   // east/west
+
+  // --- RING: medium rope bridges satellite<->satellite at y≈34 ---
+  buildRingBridge(placePair, 20, 20);   // NE/SW
+  buildRingBridge(placePair, 20, -20);  // SE/NW
+
+  // --- STEALTH CATWALKS: under-ring metal grates at y=CATWALK ---
+  buildCatwalk(placePair, 20, 20);
+  buildCatwalk(placePair, 20, -20);
+
+  // --- SKILL-GAP SHORTCUTS: narrow unlit ledges cutting diagonals at y=MID ---
+  buildShortcut(placePair, 10, 10);
+  buildShortcut(placePair, 10, -10);
 }
 
+// One satellite tree: trunk + lower platform + upper treehouse platform.
+// placePair stamps the 180° twin at (-x,-z).
+function buildSatellite(place, placePair, cx, cz) {
+  // Trunk.
+  placePair(2.4, 48, 2.4, COLORS.bark, cx, 24, cz, 'wood');
+  // Lower platform (matches spoke height).
+  placePair(6, 0.6, 6, COLORS.plank, cx, Y.LOW, cz, 'planks');
+  // Upper platform (treehouse sits here in build()).
+  placePair(5, 0.6, 5, COLORS.plank, cx, Y.SAT_UPPER, cz, 'planks');
+  // Stair-steps up the trunk from LOW -> SAT_UPPER.
+  const steps = Math.round((Y.SAT_UPPER - Y.LOW) / 1);
+  for (let s = 1; s <= steps; s++) {
+    const yy = Y.LOW + s * 1;
+    const off = -2 + s * (1.5 / steps);
+    placePair(1.2, 0.3, 1.2, COLORS.plankDark, cx + off, yy, cz, 'planks');
+  }
+}
+
+// Spoke: wide safe plank king(0,0)<->satellite(cx,cz) at y=LOW.
+function buildSpoke(placePair, cx, cz) {
+  // Length = distance from origin to (cx,cz). Author as a box centered at midpoint.
+  const len = Math.hypot(cx, cz);
+  const mx = cx / 2, mz = cz / 2;
+  // Orient: place a thin long box. For axis-aligned spokes (cardinal), w=len d=3.
+  // cx or cz is 0 for our cardinals, so this simplifies to axis-aligned.
+  if (cz === 0) placePair(len, 0.5, 3, COLORS.plank, mx, Y.LOW, 0, 'planks');
+  else          placePair(3, 0.5, len, COLORS.plank, 0, Y.LOW, mz, 'planks');
+}
+
+// Ring bridge: medium rope bridge between two satellites at y≈34.
+// (ax,az)-(bx,bz) is the diagonal; here authored as a box spanning the diagonal
+// midpoint with approximate axis-aligned extents (good enough for collision).
+function buildRingBridge(placePair, ax, az) {
+  // The two satellites this bridge connects are (ax,az) and (-ax,-az); midpoint
+  // is the origin. Author two half-bridges from each satellite toward center so
+  // symmetry holds and players cross at y≈34.
+  placePair(10, 0.4, 2, COLORS.plankDark, ax / 2, 34, az / 2, 'planks');
+}
+
+// Stealth catwalk: thin metal grate under the ring at y=CATWALK.
+function buildCatwalk(placePair, ax, az) {
+  placePair(9, 0.3, 1.2, COLORS.metal, ax / 2, Y.CATWALK, az / 2, 'metal');
+}
+
+// Skill-gap shortcut: a series of narrow unlit ledges with ~1.3m gaps.
+function buildShortcut(placePair, ax, az) {
+  // 3 tiny perches along the diagonal toward center, each a 1m ledge.
+  for (const f of [0.75, 0.55, 0.35]) {
+    placePair(1.0, 0.3, 1.0, COLORS.plankDark, ax * f, Y.MID, az * f, 'planks');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// build() — client render: meshes from authorGeometry + all NON-collidable
+// decorative visuals (canopy foliage, treehouse interiors, lanterns, rope
+// strands, rivets, clouds, contact shadows).
 function build(scene, colliders, helper) {
   const group = new THREE.Group();
   const place = (w, h, d, color, x, y, z, texName, texOpts) => {
     const m = helper.box(w, h, d, color, x, y, z, texName, texOpts);
     group.add(m); colliders.addFromMesh(m);
   };
-  authorGeometry(place);
+  const placePair = (w, h, d, color, x, y, z, texName, texOpts) => {
+    place(w, h, d, color, x, y, z, texName, texOpts);
+    if (x !== 0 || z !== 0) place(w, h, d, color, -x, y, -z, texName, texOpts);
+  };
+  authorGeometry(place, placePair);
+
+  // KING CANOPY — foliage cap atop the king trunk (decorative).
+  { const { group: g } = canopyFoliage({ baseY: 52, height: 10, radius: 7, color: COLORS.leaf, tint: COLORS.leafLit });
+    group.add(g); }
+
+  // SATELLITE CANOPIES + TREEHOUSE INTERIORS.
+  for (const s of SAT_SITES) {
+    for (const [sx, sz] of [[s.x, s.z], [-s.x, -s.z]]) {
+      { const { group: g } = canopyFoliage({ baseY: 44, height: 7, radius: 5, color: COLORS.leaf, tint: COLORS.leafLit });
+        g.position.set(sx, 0, sz); group.add(g); }
+      { const { group: g } = treehouseInterior({ baseY: Y.SAT_UPPER + 0.6, wallColor: COLORS.wall, roofColor: COLORS.leaf });
+        g.position.set(sx, 0, sz); group.add(g); }
+    }
+  }
+
+  // LANTERNS on safe routes (spokes): lit = safe cue. Place along each spoke.
+  const lanternSites = [
+    [0, 7], [0, -7], [0, 21], [0, -21],   // north/south spoke
+    [7, 0], [-7, 0], [21, 0], [-21, 0],   // east/west spoke
+  ];
+  for (const [lx, lz] of lanternSites) {
+    const { group: g } = lantern({ baseY: Y.LOW + 0.5, glowColor: COLORS.lantern });
+    g.position.set(lx, 0, lz); group.add(g);
+    if (lx !== 0 || lz !== 0) {
+      const { group: gm } = lantern({ baseY: Y.LOW + 0.5, glowColor: COLORS.lantern });
+      gm.position.set(-lx, 0, -lz); group.add(gm);
+    }
+  }
+
+  // WALKWAY DETAIL — rope strands on ring bridges, rivets on catwalks.
+  for (const s of SAT_SITES) {
+    { const { group: g } = ropeStrands({ baseY: 34, w: 10, d: 2 });
+      g.position.set(s.x / 2, 0, s.z / 2); g.rotation.y = Math.atan2(s.z, s.x); group.add(g); }
+    { const { group: g } = metalRivets({ baseY: Y.CATWALK, w: 9, d: 1.2 });
+      g.position.set(s.x / 2, 0, s.z / 2); g.rotation.y = Math.atan2(s.z, s.x); group.add(g); }
+  }
+
+  // CLOUDS above the canopy for depth (drifting billboards).
+  new Clouds(group, { count: 8, area: 160, height: 70, color: 0xffffff, opacity: 0.85 });
+
+  // Contact shadows under platforms so they don't float.
+  for (const y of [Y.LOW, Y.MID, Y.HIGH, Y.TOP]) helper.contactShadow(group, 0, 0, 11, 11);
+
   scene.add(group);
   return group;
 }
 
+// Compute colliderBoxes at module load via the collider-only pass (no meshes).
 const _colliderBoxes = [];
 {
   const h = makeBuildHelper();
-  const { place } = h.colliderPass(_colliderBoxes);
-  authorGeometry(place);
+  const { place, placePair } = h.colliderPass(_colliderBoxes);
+  authorGeometry(place, placePair);
 }
 
 export const CANOPY = new MapDefinition({
