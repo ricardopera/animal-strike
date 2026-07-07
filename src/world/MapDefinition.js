@@ -34,6 +34,14 @@ export class MapDefinition {
         throw new Error('MapDefinition.palette.sunIntensity must be a non-negative number');
       }
     }
+    // Optional per-map fall-death plane (y below which a player dies — used by
+    // high-altitude maps like Canopy). When absent, falling has no death effect
+    // (all flat-ground maps omit it). Validated only when present.
+    if (cfg.killY !== undefined && cfg.killY !== null) {
+      if (typeof cfg.killY !== 'number' || !Number.isFinite(cfg.killY)) {
+        throw new Error('MapDefinition.killY must be a finite number');
+      }
+    }
     this.id           = cfg.id;
     this.name         = cfg.name;
     this.desc         = cfg.desc;
@@ -42,5 +50,6 @@ export class MapDefinition {
     this.spawnPoints  = cfg.spawnPoints;
     this.waypoints    = cfg.waypoints;
     this.colliderBoxes = cfg.colliderBoxes;
+    this.killY        = cfg.killY;
   }
 }
