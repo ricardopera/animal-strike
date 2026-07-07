@@ -11,7 +11,7 @@ beforeAll(() => {
     const grad = { addColorStop: noop };
     const ctx = {
       fillRect: noop, strokeRect: noop, beginPath: noop, ellipse: noop,
-      lineTo: noop, moveTo: noop, stroke: noop, fill: noop,
+      lineTo: noop, moveTo: noop, stroke: noop, fill: noop, closePath: noop,
       createLinearGradient: () => grad, createRadialGradient: () => grad,
     };
     globalThis.document = {
@@ -27,7 +27,7 @@ const { get } = await import('../textures/TextureFactory.js');
 // pixel content headlessly, but resolving through the switch case (no throw) +
 // returning a CanvasTexture proves the drawers are wired into makeTexture().
 describe('TextureFactory procedural ground textures', () => {
-  for (const name of ['cobble', 'sand', 'turf', 'planks']) {
+  for (const name of ['cobble', 'sand', 'turf', 'planks', 'rock']) {
     it(`get('${name}') returns a THREE.CanvasTexture`, () => {
       const tex = get(name, { base: 0x808080, accent: 0x404040, seed: 1 });
       expect(tex).toBeInstanceOf(THREE.CanvasTexture);

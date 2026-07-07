@@ -154,10 +154,10 @@ function authorGeometry(place, placePair) {
   buildTikiHut(placePair, -22, -22);
   buildTikiHut(placePair, 22, 18);
 
-  // TROPICAL ROCKS — collidable rock cover (gray-green, concrete texture).
-  placePair(3.0, 1.8, 2.4, COLORS.rock, 18, 0.9, -20, 'concrete');
-  placePair(2.6, 1.4, 2.0, COLORS.rock, -28, 0.7, 10, 'concrete');
-  placePair(3.2, 2.0, 2.6, COLORS.rock, 12, 1.0, 28, 'concrete');
+  // TROPICAL ROCKS — collidable rock cover (gray-green, 'rock' texture).
+  placePair(3.0, 1.8, 2.4, COLORS.rock, 18, 0.9, -20, 'rock');
+  placePair(2.6, 1.4, 2.0, COLORS.rock, -28, 0.7, 10, 'rock');
+  placePair(3.2, 2.0, 2.6, COLORS.rock, 12, 1.0, 28, 'rock');
 
   // BEACHED ROWBOAT — a collidable hull box on the shore (1 pair). The decorative
   // hull shape + benches are added in build().
@@ -267,78 +267,263 @@ function build(scene, colliders, helper) {
   return group;
 }
 
-// Tiki hut decoration: 4 timber corner posts + a thatched pyramid roof over the
-// collidable woven volume. NON-collidable (the place() wall box is the collider).
+// Tiki hut decoration: 4 timber corner posts + woven weave bands + a layered
+// thatched hip roof + a small bunting string with flags. NON-collidable —
+// the place() wall box in authorGeometry is the collider.
 function addTikiRoof(group, x, z) {
-  const wallTop = 3.0;      // top of the collidable 3m wall volume
+  const wallTop = 3.0;       // top of the collidable 3m wall volume
   const postH = 3.0;
-  // 4 corner posts (thin timber cylinders) framing the hut.
-  const postGeo = new THREE.CylinderGeometry(0.12, 0.12, postH, 6);
-  const postMat = new THREE.MeshStandardMaterial({ color: COLORS.hutPost, flatShading: true, roughness: 0.9 });
   const halfW = 1.8, halfD = 1.3;
+  const postColor = COLORS.hutPost;
+  const weaveColor = 0x4a3220;  // dark woven slat accent
+  const postR = 0.10;
+
+  // 4 corner posts (thin timber cylinders) framing the hut.
+  const postGeo = new THREE.CylinderGeometry(postR, postR, postH, 6);
+  const postMat = new THREE.MeshStandardMaterial({ color: postColor, flatShading: true, roughness: 0.9 });
   for (const [px, pz] of [[halfW, halfD], [-halfW, halfD], [halfW, -halfD], [-halfW, -halfD]]) {
     const post = new THREE.Mesh(postGeo, postMat);
     post.position.set(x + px, postH / 2, z + pz);
     post.castShadow = true; post.receiveShadow = true;
     group.add(post);
   }
-  // Thatched hip roof: a 4-sided cone (pyramid) capping the posts.
-  const span = 2.6, rise = 1.4;
+
+  // WOVEN-WALL DETAIL — 2 thin horizontal weave bands wrapping each post at
+  // mid-height and upper-third, suggesting palm-frond weave. 4 small dark
+  // slats per post × 4 posts = 16 slats. NON-collidable.
+  const weaveMat = new THREE.MeshStandardMaterial({ color: weaveColor, flatShading: true, roughness: 0.95 });
+  for (const [px, pz] of [[halfW, halfD], [-halfW, halfD], [halfW, -halfD], [-halfW, -halfD]]) {
+    for (const wy of [0.7, 1.6, 2.5]) {
+      const weave = new THREE.Mesh(new THREE.TorusGeometry(postR + 0.03, 0.025, 5, 8), weaveMat);
+      weave.rotation.x = Math.PI / 2;
+      weave.position.set(x + px, wy, z + pz);
+      weave.castShadow = true; weave.receiveShadow = true;
+      group.add(weave);
+    }
+  }
+
+  // THATCHED HIP ROOF — layered for visual depth:
+  //   1. Lower frustum (truncated cone) with 8 radial segments — the main
+  //      thatch body, slightly wider than the post square (overhang).
+  //   2. Upper cone (smaller, 8 segs) — the ridge cap.
+  //   3. 8 small "thatch strands" (thin elongated boxes) around the lower
+  //      frustum's base — read as the rough edges of dried palm thatch.
   const roofMat = new THREE.MeshStandardMaterial({ color: COLORS.hutRoof, flatShading: true, roughness: 0.95 });
-  const cap = new THREE.Mesh(
-    new THREE.ConeGeometry(span, rise * 2, 4),
+  const capMat = new THREE.MeshStandardMaterial({ color: COLORS.hutRoof, flatShading: true, roughness: 0.95 });
+  const overhangR = 2.4;       // base radius of lower frustum
+  const ridgeR = 0.7;          // top radius of frustum / base radius of cap
+  const lowerH = 0.9;
+  const upperH = 0.7;
+  // Lower frustum: a CylinderGeometry tapered (CylinderGeometry supports
+  // different top/bottom radii). Open at the bottom to avoid Z-fighting.
+  const frustum = new THREE.Mesh(
+    new THREE.CylinderGeometry(ridgeR, overhangR, lowerH, 8, 1, false),
     roofMat,
   );
-  cap.position.set(x, wallTop + rise, z);
-  cap.rotation.y = Math.PI / 4; // align pyramid edges with the post square
+  frustum.position.set(x, wallTop + lowerH / 2, z);
+  frustum.castShadow = true; frustum.receiveShadow = true;
+  group.add(frustum);
+  // Upper cone (ridge cap).
+  const cap = new THREE.Mesh(
+    new THREE.ConeGeometry(ridgeR, upperH, 8, 1),
+    capMat,
+  );
+  cap.position.set(x, wallTop + lowerH + upperH / 2, z);
   cap.castShadow = true; cap.receiveShadow = true;
   group.add(cap);
-}
+  // 8 thatch strands around the frustum base — thin elongated boxes tilted
+  // outward to suggest overhanging dried palm thatch.
+  const strandMat = new THREE.MeshStandardMaterial({ color: COLORS.hutRoof, flatShading: true, roughness: 1.0 });
+  const strandCount = 8;
+  for (let i = 0; i < strandCount; i++) {
+    const a = (i / strandCount) * Math.PI * 2;
+    const sx = Math.cos(a) * (overhangR + 0.05);
+    const sz = Math.sin(a) * (overhangR + 0.05);
+    const strand = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.06, 0.06), strandMat);
+    strand.position.set(x + sx, wallTop + 0.04, z + sz);
+    strand.rotation.y = -a;
+    strand.rotation.z = -0.45; // tilt outward (drooping thatch)
+    strand.castShadow = true; strand.receiveShadow = true;
+    group.add(strand);
+  }
 
-// Beached rowboat decoration: a long hollowed hull + two bench seats over the
-// collidable boat box. NON-collidable.
-function addRowboat(group, x, z) {
-  const hullMat = new THREE.MeshStandardMaterial({ color: COLORS.boatHull, flatShading: true, roughness: 0.85 });
-  const benchMat = new THREE.MeshStandardMaterial({ color: COLORS.boatBench, flatShading: true, roughness: 0.9 });
-  // Hull: a long box with tapered ends suggested by a second smaller box.
-  const hull = new THREE.Mesh(new THREE.BoxGeometry(4.0, 0.5, 1.5), hullMat);
-  hull.position.set(x, 0.55, z);
-  hull.castShadow = true; hull.receiveShadow = true;
-  group.add(hull);
-  // Gunwale rim (slightly wider, thin) to read as a boat edge.
-  const rim = new THREE.Mesh(new THREE.BoxGeometry(4.1, 0.18, 1.6), hullMat);
-  rim.position.set(x, 0.82, z);
-  rim.castShadow = true; rim.receiveShadow = true;
-  group.add(rim);
-  // Two bench seats.
-  for (const bx of [-1.0, 1.0]) {
-    const bench = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 1.3), benchMat);
-    bench.position.set(x + bx, 0.95, z);
-    bench.castShadow = true; bench.receiveShadow = true;
-    group.add(bench);
+  // BUNTING / FLAG LINE — a thin string spanning two adjacent corner posts
+  // (front pair) with 4 small colored flags hanging from it. Adds village feel.
+  const flagColors = [COLORS.umbA, COLORS.umbB, 0x4a8acc, 0xe8c83a];
+  const buntingY = wallTop - 0.4;
+  // String: a thin dark cylinder between the two front corner posts.
+  const stringMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, flatShading: true, roughness: 0.95 });
+  const stringLen = halfW * 2;
+  const stringMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, stringLen, 4), stringMat);
+  stringMesh.rotation.z = Math.PI / 2;
+  stringMesh.position.set(x, buntingY, z + halfD);
+  stringMesh.castShadow = true; stringMesh.receiveShadow = true;
+  group.add(stringMesh);
+  // 4 small triangular flags hanging from the string — tiny elongated boxes.
+  for (let i = 0; i < 4; i++) {
+    const fx = -halfW + (i / 3) * stringLen;
+    const flagColor = flagColors[i % flagColors.length];
+    const flagMat = new THREE.MeshStandardMaterial({ color: flagColor, flatShading: true, roughness: 0.9, side: THREE.DoubleSide });
+    const flag = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.01), flagMat);
+    flag.position.set(x + fx, buntingY - 0.18, z + halfD);
+    flag.castShadow = true; flag.receiveShadow = true;
+    group.add(flag);
   }
 }
 
-// Beach umbrella decoration: a striped canopy on a pole. NON-collidable.
+// Beached rowboat decoration: a tapered hull (pointed prow + transom stern)
+// with planking, two bench seats, and two oars laid across. NON-collidable.
+function addRowboat(group, x, z) {
+  const hullMat = new THREE.MeshStandardMaterial({ color: COLORS.boatHull, flatShading: true, roughness: 0.85 });
+  const benchMat = new THREE.MeshStandardMaterial({ color: COLORS.boatBench, flatShading: true, roughness: 0.9 });
+  const plankMat = new THREE.MeshStandardMaterial({ color: 0x6a3a1e, flatShading: true, roughness: 0.9 });
+  const oarMat = new THREE.MeshStandardMaterial({ color: COLORS.boatBench, flatShading: true, roughness: 0.9 });
+
+  // Random "beached" rotation — the boat doesn't sit perfectly aligned to the
+  // world axes. Deterministic per boat index via Math.sin on (x,z) — no
+  // Math.random so the build is reproducible.
+  const tilt = Math.sin(x * 0.31 + z * 0.47) * (Math.PI / 180 * 16);
+  const boatPivot = new THREE.Group();
+  boatPivot.position.set(x, 0, z);
+  boatPivot.rotation.y = tilt;
+  group.add(boatPivot);
+
+  // HULL — main body (long box), pointed prow (4-sided cone), and stern
+  // transom (a slightly shorter narrower box). Reads as a tapered rowboat.
+  const hullLen = 4.2;
+  const hullW = 1.5;
+  const hullH = 0.55;
+  const hullY = 0.45;
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(hullLen, hullH, hullW), hullMat);
+  hull.position.set(0, hullY, 0);
+  hull.castShadow = true; hull.receiveShadow = true;
+  boatPivot.add(hull);
+  // Prow: a 4-sided cone at +X end, rotated so its base aligns with the hull.
+  const prowR = hullW * 0.55;
+  const prowLen = 0.9;
+  const prow = new THREE.Mesh(new THREE.ConeGeometry(prowR, prowLen, 4, 1), hullMat);
+  prow.rotation.z = -Math.PI / 2;          // point along +X
+  prow.rotation.y = Math.PI / 4;           // align flat faces with hull sides
+  prow.position.set(hullLen / 2 + prowLen / 2 - 0.05, hullY, 0);
+  prow.castShadow = true; prow.receiveShadow = true;
+  boatPivot.add(prow);
+  // Stern transom: a slightly shorter/narrower box at -X end.
+  const stern = new THREE.Mesh(new THREE.BoxGeometry(0.4, hullH + 0.06, hullW * 0.85), hullMat);
+  stern.position.set(-hullLen / 2 - 0.2, hullY, 0);
+  stern.castShadow = true; stern.receiveShadow = true;
+  boatPivot.add(stern);
+  // Gunwale rim — a thin wider band along the top of the hull, suggesting
+  // the boat's raised edge.
+  const rim = new THREE.Mesh(new THREE.BoxGeometry(hullLen, 0.10, hullW + 0.08), hullMat);
+  rim.position.set(0, hullY + hullH / 2 + 0.05, 0);
+  rim.castShadow = true; rim.receiveShadow = true;
+  boatPivot.add(rim);
+  // Inner well: a darker, slightly smaller box sunk into the hull top so the
+  // boat reads as HOLLOW from above.
+  const well = new THREE.Mesh(new THREE.BoxGeometry(hullLen - 0.4, 0.12, hullW - 0.2), plankMat);
+  well.position.set(0, hullY + hullH / 2 + 0.01, 0);
+  well.castShadow = true; well.receiveShadow = true;
+  boatPivot.add(well);
+
+  // PLANK DETAIL — 5 thin dark slats running across the hull sides (length-
+  // wise, on both +Z and -Z faces) to suggest wood planking.
+  for (const sz of [hullW / 2 + 0.005, -hullW / 2 - 0.005]) {
+    for (let i = 0; i < 5; i++) {
+      const sx = -hullLen / 2 + 0.3 + (i / 4) * (hullLen - 0.6);
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(0.05, hullH - 0.04, 0.02), plankMat);
+      plank.position.set(sx, hullY, sz);
+      plank.castShadow = true; plank.receiveShadow = true;
+      boatPivot.add(plank);
+    }
+  }
+
+  // BENCH SEATS — two wooden thwart benches spanning the hull interior.
+  for (const bx of [-0.9, 0.9]) {
+    const bench = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.08, hullW - 0.2), benchMat);
+    bench.position.set(bx, hullY + hullH / 2 + 0.10, 0);
+    bench.castShadow = true; bench.receiveShadow = true;
+    boatPivot.add(bench);
+  }
+
+  // OARS — 2 long thin paddles laid across the boat, one on each side, with
+  // handles sticking out past the gunwale (paddles resting).
+  for (const sz of [hullW / 2 + 0.18, -hullW / 2 - 0.18]) {
+    const oar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 3.4, 6), oarMat);
+    oar.rotation.z = Math.PI / 2; // lay along the X axis
+    oar.position.set(0.2, hullY + hullH / 2 + 0.05, sz);
+    oar.castShadow = true; oar.receiveShadow = true;
+    boatPivot.add(oar);
+    // Paddle blade at the outer end — a small flat box.
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.04, 0.14), plankMat);
+    blade.position.set(1.7, hullY + hullH / 2 + 0.05, sz);
+    blade.castShadow = true; blade.receiveShadow = true;
+    boatPivot.add(blade);
+  }
+}
+
+// Beach umbrella decoration: a slightly leaning pole + striped canopy + small
+// fabric-trim fringe around the canopy edge. NON-collidable.
 function addUmbrella(group, x, z) {
+  // Deterministic per-umbrella lean direction (no Math.random).
+  const leanAngle = Math.sin(x * 0.7 + z * 0.3) * (Math.PI / 180 * 7);
+  const leanDir = Math.cos(x * 0.5 - z * 0.6);
+  // Tilt pivot: the umbrella's pole + canopy share a Group that leans from
+  // its base, so the whole parasol sways together.
+  const pivot = new THREE.Group();
+  pivot.position.set(x, 0, z);
+  pivot.rotation.z = leanAngle * leanDir;
+  group.add(pivot);
+
   const poleMat = new THREE.MeshStandardMaterial({ color: COLORS.umbPole, flatShading: true, roughness: 0.9 });
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.4, 6), poleMat);
-  pole.position.set(x, 1.2, z);
+  const poleH = 2.6;
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, poleH, 6), poleMat);
+  pole.position.set(0, poleH / 2, 0);
   pole.castShadow = true; pole.receiveShadow = true;
-  group.add(pole);
-  // Canopy: an 8-segment cone alternating two colors = striped parasol.
+  pivot.add(pole);
+
+  // SAND ANCHOR — a small flat dark cylinder at the pole base, reading as
+  // the umbrella's planted anchor in the sand.
+  const anchorMat = new THREE.MeshStandardMaterial({ color: 0x6a4a2a, flatShading: true, roughness: 0.95 });
+  const anchor = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.20, 0.10, 8), anchorMat);
+  anchor.position.set(0, 0.05, 0);
+  anchor.castShadow = true; anchor.receiveShadow = true;
+  pivot.add(anchor);
+
+  // CANOPY — an 8-segment cone with alternating stripe colors.
+  const canopyY = 2.35;
+  const canopyR = 1.35;
+  const canopyH = 0.55;
   const segs = 8;
+  const canopyPivot = new THREE.Group();
+  canopyPivot.position.set(0, canopyY, 0);
+  pivot.add(canopyPivot);
   for (let i = 0; i < segs; i++) {
     const c = i % 2 === 0 ? COLORS.umbA : COLORS.umbB;
     const mat = new THREE.MeshStandardMaterial({ color: c, flatShading: true, roughness: 0.8, side: THREE.DoubleSide });
-    // Build a thin wedge of a cone by clipping a full cone's thetaLength.
     const wedge = new THREE.Mesh(
-      new THREE.ConeGeometry(1.3, 0.5, segs, 1, false, (i / segs) * Math.PI * 2, (Math.PI * 2) / segs),
+      new THREE.ConeGeometry(canopyR, canopyH, segs, 1, false, (i / segs) * Math.PI * 2, (Math.PI * 2) / segs),
       mat,
     );
-    wedge.position.set(x, 2.35, z);
+    // ConeGeometry's tip is at +Y by default; the canopy wants the tip at
+    // -Y so the canopy opens upward like a real umbrella. Flip it.
+    wedge.rotation.x = Math.PI;
+    wedge.position.set(0, 0, 0);
     wedge.castShadow = true; wedge.receiveShadow = false;
-    group.add(wedge);
+    canopyPivot.add(wedge);
+  }
+
+  // FRINGE / TASSEL — 8 thin elongated boxes around the canopy's outer
+  // edge, reading as fabric trim hanging from the rim.
+  const fringeMat = new THREE.MeshStandardMaterial({ color: 0xe8c83a, flatShading: true, roughness: 0.9, side: THREE.DoubleSide });
+  for (let i = 0; i < segs; i++) {
+    const a = (i / segs) * Math.PI * 2 + (Math.PI / segs); // midway between wedges
+    const fx = Math.cos(a) * (canopyR * 0.95);
+    const fz = Math.sin(a) * (canopyR * 0.95);
+    const fringe = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.02), fringeMat);
+    fringe.position.set(fx, -0.10, fz);
+    fringe.rotation.y = -a;
+    fringe.castShadow = true; fringe.receiveShadow = true;
+    canopyPivot.add(fringe);
   }
 }
 

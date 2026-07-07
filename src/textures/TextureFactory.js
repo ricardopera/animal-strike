@@ -13,7 +13,7 @@ function key(name, opts) {
 /**
  * Get a cached procedural texture.
  * @param {string} name - one of: camo, wood, metal, concrete, fur, stripes,
- *   grid, cobble, sand, turf, planks
+ *   grid, cobble, sand, turf, planks, rock
  * @param {object} [opts] - { size=128, base=hex, accent=hex, seed }
  * @returns {THREE.CanvasTexture}
  */
@@ -70,6 +70,7 @@ function makeTexture(name, opts) {
     case 'sand': drawSand(ctx, size, base, accent, rand); break;
     case 'turf': drawTurf(ctx, size, base, accent, rand); break;
     case 'planks': drawPlanks(ctx, size, base, accent, rand); break;
+    case 'rock': drawRock(ctx, size, base, accent, rand); break;
     default: /* just base */ break;
   }
 
@@ -307,5 +308,60 @@ function drawPlanks(ctx, size, base, accent, rand) {
     // dark seam between planks
     ctx.fillStyle = rgb(shade(accent, -0.3), 0.7);
     ctx.fillRect(0, y0, size, 1);
+  }
+}
+
+// Angular tropical stone: irregular polygonal rocks with darker cracks, a
+// few mossy-green patches, and a hint of warmth. base = stone gray-green,
+// accent = crack/shadow tone. Reads as a low-poly rocky outcrop when tiled.
+function drawRock(ctx, size, base, accent, rand) {
+  // Sparse moss blotches (warm-tinted green) — gives the stone tropical character.
+  for (let i = 0; i < 6; i++) {
+    const x = rand() * size, y = rand() * size;
+    const r = size * (0.05 + rand() * 0.10);
+    const moss = { r: 90 + Math.floor(rand() * 30), g: 120 + Math.floor(rand() * 30), b: 50 + Math.floor(rand() * 25) };
+    ctx.fillStyle = rgb(moss, 0.45);
+    ctx.beginPath();
+    ctx.ellipse(x, y, r, r * (0.6 + rand() * 0.4), rand() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Angular rock facets: medium-tone polygons that suggest a chipped stone.
+  for (let i = 0; i < 14; i++) {
+    const cx = rand() * size, cy = rand() * size;
+    const tone = shade(base, (rand() - 0.5) * 0.30);
+    ctx.fillStyle = rgb(tone, 0.85);
+    const pts = 4 + Math.floor(rand() * 3);
+    const r = size * (0.06 + rand() * 0.10);
+    ctx.beginPath();
+    for (let p = 0; p < pts; p++) {
+      const a = (p / pts) * Math.PI * 2 + rand() * 0.4;
+      const rr = r * (0.7 + rand() * 0.5);
+      const px = cx + Math.cos(a) * rr;
+      const py = cy + Math.sin(a) * rr;
+      if (p === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  // Dark angular cracks (3 short segmented strokes).
+  ctx.strokeStyle = rgb(shade(accent, -0.35), 0.55);
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 4; i++) {
+    ctx.beginPath();
+    let x = rand() * size, y = rand() * size;
+    ctx.moveTo(x, y);
+    for (let s = 0; s < 4 + Math.floor(rand() * 3); s++) {
+      x += (rand() - 0.5) * 18;
+      y += (rand() - 0.5) * 18;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  // Fine speckle grain — adds surface noise like real weathered stone.
+  for (let i = 0; i < size * size * 0.18; i++) {
+    const x = rand() * size, y = rand() * size;
+    const v = (rand() - 0.5) * 0.4;
+    ctx.fillStyle = rgb(shade(base, v), 0.35);
+    ctx.fillRect(x, y, 1, 1);
   }
 }
