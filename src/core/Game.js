@@ -52,7 +52,6 @@ const _shotFar = new THREE.Vector3();
 // day/night cycle. ~1 full revolution per 10 minutes of real time — barely
 // noticeable moment-to-moment. Advanced by real frame dt in frame().
 const SUN_DRIFT_RADIANS_PER_SECOND = (Math.PI * 2) / 600; // 2π / 600s ≈ 10 min/rev
-let sunAzimuth = 0;
 
 // Build a vertical gradient sky texture from 4 stops [zenith, mid, haze, horizon].
 // Falls back to the original Plaza palette if stops are omitted (backward compat).
@@ -130,6 +129,9 @@ export class Game {
     this.scene.add(dir);
     this.scene.add(dir.target);
     this.sun = dir;
+    // Sun azimuth drift: instance field (not module-level) so each Game tracks
+    // its own angle and resets to 0 on construction.
+    this.sunAzimuth = 0;
     // Cool fill light from the opposite side to soften the key's hard shadows.
     const fill = new THREE.DirectionalLight(0x88aaff, 0.4);
     fill.position.set(-40, 40, -30);
@@ -374,13 +376,12 @@ export class Game {
 
   // Keep the sun's shadow frustum centered on the target (player) while applying
   // the slow azimuth drift: the base horizontal offset (40,30) is rotated around
-  // the target by `sunAzimuth`, height stays 80. A very subtle warm tint at low
-  // angle gives the arc a sense of life. Works whether shadows are on or off
-  // (the position still drives the directional key light's direction).
+  // the target by `sunAzimuth`, height stays 80. Works whether shadows are on or
+  // off (the position still drives the directional key light's direction).
   _updateSun(tx, ty, tz) {
     if (!this.sun) return;
     const off = 40, fwd = 30;
-    const cos = Math.cos(sunAzimuth), sin = Math.sin(sunAzimuth);
+    const cos = Math.cos(this.sunAzimuth), sin = Math.sin(this.sunAzimuth);
     this.sun.position.set(tx + off * cos + fwd * sin, 80, tz - off * sin + fwd * cos);
     this.sun.target.position.set(tx, ty, tz);
     this.sun.target.updateMatrixWorld();
@@ -802,7 +803,7 @@ export class Game {
   frame(realDt) {
     if (this.paused) return;
     // Advance the slow sun azimuth drift by real frame dt (see SUN_DRIFT_*).
-    sunAzimuth += realDt * SUN_DRIFT_RADIANS_PER_SECOND;
+    this.sunAzimuth += realDt * SUN_DRIFT_RADIANS_PER_SECOND;
     // Multiplayer path: send input + render from server snapshots. Keeps the
     // single-player inline sim path below fully untouched.
     if (this.mpActive) { this.frameMultiplayer(realDt); return; }
