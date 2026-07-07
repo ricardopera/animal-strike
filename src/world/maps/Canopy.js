@@ -41,31 +41,38 @@ const Y = { LOW: 30, MID: 37, HIGH: 44, TOP: 51, SAT_UPPER: 40, CATWALK: 26, RIN
 // Staggered-height spawns across platforms/walkways (anti-camp). None on the
 // king's top deck (no free power-position spawns).
 const SPAWN_POINTS = [
-  // Satellite lowers (y≈30).
+  // Satellite lowers (y≈30). x/z=22 sits on the spoke near the satellite.
   new THREE.Vector3(0, 31, 22), new THREE.Vector3(0, 31, -22),
   new THREE.Vector3(22, 31, 0), new THREE.Vector3(-22, 31, 0),
-  // King mid levels (y≈34, 38).
-  new THREE.Vector3(4, 35, 4), new THREE.Vector3(-4, 35, -4),
-  new THREE.Vector3(4, 39, -4), new THREE.Vector3(-4, 39, 4),
-  // Satellite uppers near treehouses (y≈40).
-  new THREE.Vector3(0, 41, 24), new THREE.Vector3(0, 41, -24),
-  new THREE.Vector3(24, 41, 0), new THREE.Vector3(-24, 41, 0),
+  // King MID/HIGH decks (10-wide, centered at 0 -> spans [-5,5]; top at
+  // y+0.3). Spawn y is the deck top + ~0.7 so the player stands on it, not
+  // drops onto the deck below.
+  new THREE.Vector3(3, Y.MID + 0.7, 3),  new THREE.Vector3(-3, Y.MID + 0.7, -3),
+  new THREE.Vector3(3, Y.HIGH + 0.7, -3), new THREE.Vector3(-3, Y.HIGH + 0.7, 3),
+  // Satellite uppers (5-wide platform centered at 28 -> spans [25.5,30.5];
+  // top at SAT_UPPER+0.3). x/z=28 centers the player on the platform.
+  new THREE.Vector3(0, Y.SAT_UPPER + 0.7, 28), new THREE.Vector3(0, Y.SAT_UPPER + 0.7, -28),
+  new THREE.Vector3(28, Y.SAT_UPPER + 0.7, 0), new THREE.Vector3(-28, Y.SAT_UPPER + 0.7, 0),
 ];
 
 // Waypoints ONLY on safe walkable surfaces (spokes + ring + king hub). Bots
-// stay on lit routes; risky shortcuts are player-only.
+// stay on lit routes; risky shortcuts are player-only. Every waypoint MUST sit
+// on an actual collidable surface at the right height — otherwise bots pathing
+// to it walk off into the void (see the ring-bridge span below).
 const WAYPOINTS = [
   // King hub at each level.
   new THREE.Vector3(0, Y.LOW, 0), new THREE.Vector3(0, Y.MID, 0),
-  // Spoke midpoints (king<->satellite).
+  // Spoke midpoints (king<->satellite). Spokes are 3-wide, length 28, centered
+  // at 14 — so x/z=14 is the spoke midpoint.
   new THREE.Vector3(0, Y.LOW, 14), new THREE.Vector3(0, Y.LOW, -14),
   new THREE.Vector3(14, Y.LOW, 0), new THREE.Vector3(-14, Y.LOW, 0),
-  // Satellite lowers.
+  // Satellite lowers (6-wide platform centered at 28).
   new THREE.Vector3(0, Y.LOW, 28), new THREE.Vector3(0, Y.LOW, -28),
   new THREE.Vector3(28, Y.LOW, 0), new THREE.Vector3(-28, Y.LOW, 0),
-  // Ring midpoints (satellite<->satellite) at the ring-bridge height (Y.RING).
-  new THREE.Vector3(20, Y.RING, 20), new THREE.Vector3(-20, Y.RING, -20),
-  new THREE.Vector3(20, Y.RING, -20), new THREE.Vector3(-20, Y.RING, 20),
+  // Ring-bridge midpoints. Each ring half-bridge is a 10-long box centered at
+  // (ax/2, az/2) = (±10, ±10), so the midpoint (±10, ±10) sits ON the bridge.
+  new THREE.Vector3(10, Y.RING, 10), new THREE.Vector3(-10, Y.RING, -10),
+  new THREE.Vector3(10, Y.RING, -10), new THREE.Vector3(-10, Y.RING, 10),
 ];
 
 // Author the geometry once. `place`/`placePair` come from the caller — either
@@ -79,7 +86,9 @@ function authorGeometry(place, placePair) {
     place(10, 0.6, 10, COLORS.plank, 0, y, 0, 'planks');
   }
   // Internal stair-steps connecting king levels (1m rise each — hop-up ladder).
-  // A diagonal run of small boxes from LOW -> MID -> HIGH -> TOP.
+  // A diagonal run of small boxes from LOW -> MID -> HIGH -> TOP. placePair
+  // stamps the 180° twin so the ascent is reachable from BOTH halves of the
+  // king deck (FFA fairness — otherwise only the +z face could climb).
   for (let lvl = 0; lvl < 3; lvl++) {
     const baseY = [Y.LOW, Y.MID, Y.HIGH][lvl];
     const nextY = [Y.MID, Y.HIGH, Y.TOP][lvl];
@@ -87,7 +96,7 @@ function authorGeometry(place, placePair) {
     for (let s = 1; s <= steps; s++) {
       const yy = baseY + s * 1;
       const xx = -3.5 + s * (3 / steps);
-      place(1.4, 0.3, 1.4, COLORS.plankDark, xx, yy, 3, 'planks');
+      placePair(1.4, 0.3, 1.4, COLORS.plankDark, xx, yy, 3, 'planks');
     }
   }
 
