@@ -53,6 +53,10 @@ const _shotFar = new THREE.Vector3();
 // noticeable moment-to-moment. Advanced by real frame dt in frame().
 const SUN_DRIFT_RADIANS_PER_SECOND = (Math.PI * 2) / 600; // 2π / 600s ≈ 10 min/rev
 
+// Visual-only crosshair fire-bloom per weapon (px of transient expansion). Does
+// NOT affect aim/spread/fire-rate — purely the crosshair's visual feedback.
+const CROSSHAIR_FIRE_BLOOM = { SNIPER: 22, SHOTGUN: 16, AR: 10, SMG: 7, PISTOL: 6 };
+
 // Build a vertical gradient sky texture from 4 stops [zenith, mid, haze, horizon].
 // Falls back to the original Plaza palette if stops are omitted (backward compat).
 function makeSkyTexture(stops) {
@@ -770,7 +774,7 @@ export class Game {
           this.sparks.spawn(point, new THREE.Vector3(0, 1, 0), ev.hs ? 0xffaa22 : 0xff3344);
         }
         if (ev.shooter === this.mpLocalId) { this.hud.showHitmarker(false); Sfx.hit(); }
-        if (ev.victim === this.mpLocalId) Sfx.hurt();
+        if (ev.victim === this.mpLocalId) { Sfx.hurt(); this.hud.flashDamage(); }
       } else if (ev.k === 'kill') {
         const s = (this.remoteView.snapshots.at(-1)?.players || []).find(p => p.id === ev.shooter);
         const v = (this.remoteView.snapshots.at(-1)?.players || []).find(p => p.id === ev.victim);
@@ -1018,6 +1022,8 @@ export class Game {
       shooter.pitch += def.recoil.vertical * (Math.random() * 0.5 + 0.5);
       shooter.yaw += (Math.random() - 0.5) * def.recoil.horizontal;
       shooter.pitch = Math.min(shooter.pitch, Math.PI / 2 - 0.01);
+      // Visual-only crosshair fire-bloom (layers on top of movement spread).
+      this.crosshair.bloom(CROSSHAIR_FIRE_BLOOM[def.id] ?? 8);
     }
   }
 
@@ -1071,6 +1077,8 @@ export class Game {
     shooter.pitch += def.recoil.vertical * (Math.random() * 0.5 + 0.5);
     shooter.yaw += (Math.random() - 0.5) * def.recoil.horizontal;
     shooter.pitch = Math.min(shooter.pitch, Math.PI / 2 - 0.01);
+    // Visual-only crosshair fire-bloom (local feedback only — server is authoritative).
+    this.crosshair.bloom(CROSSHAIR_FIRE_BLOOM[def.id] ?? 8);
   }
 
   playShootSfx(weaponId) {
@@ -1113,6 +1121,7 @@ export class Game {
         if (shooter.isLocal) this.hud.showHitmarker(best.target.health <= 0);
         if (best.target.isLocal) {
           Sfx.hurt();
+          this.hud.flashDamage();
         }
         // Per-animal hurt voice: the VICTIM speaks in their own animal's voice.
         this.voice.playAnimal(best.target.animalId, 'hurt');
