@@ -95,6 +95,26 @@ describe('WaterPlane (V6)', () => {
     expect(ei).toBeLessThan(0.07);
   });
 
+  it('update(dt) does not introduce NaN into the position buffer (regression: the _width/_depth typo)', () => {
+    // Catches a class of bug where update() reads the wrong field name and
+    // multiplies a vertex coord by `undefined` → NaN. Previously an underscore
+    // mismatch in the field name (this._width vs this.width) silently turned
+    // every vertex-Z into NaN after the first frame, breaking the bounding
+    // sphere and producing "Computed radius is NaN" in the console.
+    const water = new WaterPlane(24, 16);
+    // Snapshot the (finite) initial Z values, then run a few updates and
+    // re-check that every Z is still a finite number within the ±0.05 envelope.
+    const arr = water.mesh.geometry.attributes.position.array;
+    for (let i = 0; i < 5; i++) water.update(0.016);
+    let maxAbs = 0;
+    for (let i = 2; i < arr.length; i += 3) {
+      expect(Number.isFinite(arr[i])).toBe(true);
+      const v = Math.abs(arr[i]);
+      if (v > maxAbs) maxAbs = v;
+    }
+    expect(maxAbs).toBeLessThanOrEqual(0.05);
+  });
+
   it('dispose() releases water geometry, water material, foam geometry, foam material', () => {
     const water = new WaterPlane(10, 10);
     expect(() => water.dispose()).not.toThrow();

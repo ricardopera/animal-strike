@@ -249,7 +249,7 @@ export class WaterPlane {
     this._phase += dt;
     const arr = this._posAttr.array;
     const stride = 3; // position is (x,y,z)
-    const w = this._width, d = this._depth;
+    const w = this.width, d = this.depth;
     const ws = this._widthSegments, ds = this._depthSegments;
     const phase = this._phase;
     for (let iz = 0; iz <= ds; iz++) {
