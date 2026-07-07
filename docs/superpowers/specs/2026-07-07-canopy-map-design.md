@@ -88,7 +88,7 @@ Waypoints are placed **only on walkable surfaces at correct heights** along the 
 ## Visuals & palette — misty dawn
 
 - **Sky gradient** (4 stops, zenith→horizon): `['#3a6a9a', '#7a9ec0', '#c0d8e0', '#e8e8d8']` — pale blue/teal dawn.
-- **Fog:** cool blue-grey, **density tuned to occlude the void** (denser than Haven's 0.005; value finalized during tuning, target hides everything below y≈20 from a y≈40 viewpoint).
+- **Fog:** cool blue-grey. Starting density **0.012** (denser than Haven's 0.005), tuned during implementation. The "can't see the ground" effect comes primarily from **the absence of a ground mesh** — there is literally nothing to render below the platforms except trunk sections fading into the fog-colored void — not from extremely dense fog alone. Fog blends the lower trunk portions and any far geometry into the background.
 - **Hemisphere light:** `[skyCool, groundWarmBounce]` — cool sky bounce + warm low ground bounce.
 - **Sun:** warm `sunColor`, raking low angle, moderate intensity (~2.0–2.4).
 - **Materials:** mossy bark trunks (`wood` tex, dark green-brown), weathered planks (`planks`), frayed rope bridges (woven torus/box strands), riveted metal catwalks (`metal`, high metalness/low roughness per MapBuildHelper).
