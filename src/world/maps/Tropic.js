@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { MapDefinition } from '../MapDefinition.js';
 import { makeBuildHelper } from '../MapBuildHelper.js';
 import { palmTree } from '../props/PalmTree.js';
+import { beachGrassTuft, driftwoodLog, smallRock, starfish } from '../props/BeachScatter.js';
 import { WaterPlane } from '../../fx/WaterPlane.js';
 import { Clouds } from '../../fx/Clouds.js';
 
@@ -248,6 +249,80 @@ function build(scene, colliders, helper) {
   for (const u of umbSpecs) {
     addUmbrella(group, u.x, u.z);
     if (u.x !== 0 || u.z !== 0) addUmbrella(group, -u.x, -u.z);
+  }
+
+  // SMALL ROCK ACCENTS — NON-collidable decorative rock clusters of varied
+  // sizes scattered around the beach. Each is smallRock() (2–3 chunks).
+  // Placed at fixed (x,z) safe positions (avoid spawns, lagoon, huts, boat).
+  const smallRockSpecs = [
+    { x:  20, z:  -6 },   // east shore
+    { x: -18, z:   4 },   // west shore
+    { x:  32, z: -10 },   // east edge
+    { x: -32, z:  10 },   // west edge (mirror)
+    { x:   6, z:  18 },   // south of lagoon
+    { x:  -6, z: -18 },   // north of lagoon
+  ];
+  for (let i = 0; i < smallRockSpecs.length; i++) {
+    const s = smallRockSpecs[i];
+    const { group: rg } = smallRock({ rockColor: COLORS.rock, seed: i + 1 });
+    rg.position.set(s.x, 0, s.z);
+    group.add(rg);
+  }
+
+  // GROUND SCATTER — beach grass tufts + driftwood logs + a few starfish
+  // scattered around the beach. All NON-collidable (added directly to group).
+  // Positions are hand-picked to avoid spawn points, the lagoon, hut/boat/
+  // rock footprints, and other big elements. Each cluster is mirrored to
+  // (-x,-z) so the build stays 180°-rotationally symmetric.
+  const grassSites = [
+    { x:  16, z: -16, seed: 1 },   // east of lagoon, between palms
+    { x: -16, z:  16, seed: 2 },   // west of lagoon (mirror)
+    { x:  24, z:  12, seed: 3 },   // east shore
+    { x: -24, z: -12, seed: 4 },   // west shore (mirror)
+    { x:  -8, z:  20, seed: 5 },   // south-mid beach
+    { x:   8, z: -20, seed: 6 },   // north-mid beach (mirror)
+  ];
+  for (const g of grassSites) {
+    const { group: gg } = beachGrassTuft({ seed: g.seed });
+    gg.position.set(g.x, 0, g.z);
+    group.add(gg);
+    const { group: ggm } = beachGrassTuft({ seed: g.seed + 7 });
+    ggm.position.set(-g.x, 0, -g.z);
+    group.add(ggm);
+  }
+
+  // DRIFTWOOD LOGS — a few weathered logs lying on the sand near the shore.
+  const logSites = [
+    { x:  30, z:  -4, seed: 11 },
+    { x: -30, z:   4, seed: 12 },
+    { x:  14, z:  22, seed: 13 },
+    { x: -14, z: -22, seed: 14 },
+  ];
+  for (const l of logSites) {
+    const { group: lg } = driftwoodLog({ seed: l.seed });
+    lg.position.set(l.x, 0, l.z);
+    lg.rotation.y = (l.seed * 0.7) % (Math.PI * 2); // varied log rotation
+    group.add(lg);
+    const { group: lgm } = driftwoodLog({ seed: l.seed + 19 });
+    lgm.position.set(-l.x, 0, -l.z);
+    lgm.rotation.y = ((l.seed + 19) * 0.7) % (Math.PI * 2);
+    group.add(lgm);
+  }
+
+  // STARFISH — a few tiny pink starfish near the lagoon shore.
+  const starfishSites = [
+    { x:  10, z:   6, seed: 21 },
+    { x: -10, z:  -6, seed: 22 },
+    { x:   4, z: -10, seed: 23 },
+    { x:  -4, z:  10, seed: 24 },
+  ];
+  for (const s of starfishSites) {
+    const { group: sg } = starfish({ seed: s.seed });
+    sg.position.set(s.x, 0.02, s.z); // sit just above sand
+    group.add(sg);
+    const { group: sgm } = starfish({ seed: s.seed + 31 });
+    sgm.position.set(-s.x, 0.02, -s.z);
+    group.add(sgm);
   }
 
   // CLOUDS — drifting cloud billboards for sky depth. NON-collidable; Clouds
