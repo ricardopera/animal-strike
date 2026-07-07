@@ -49,7 +49,8 @@ export function palmTree({
   const rBase = 0.48;
   const rTop = 0.38;
   // Lean direction (deterministic — fixed XZ unit vector). Tiny per-segment
-  // offsets accumulate to a ~6° lean over the trunk's height.
+  // offsets accumulate to a ~4° lean over the trunk's height
+  // (atan(0.48 / height) for height=7).
   const leanLen = 0.06; // lateral offset per segment in the lean direction
   const leanDx = 1.0;
   const leanDz = 0.35;
@@ -61,14 +62,16 @@ export function palmTree({
   const trunkScarB = shadeHex(trunkColor, -0.10);  // shadowed ring
   for (let i = 0; i < trunkSegments; i++) {
     const t = i / Math.max(1, trunkSegments - 1); // 0 at base, 1 at top
-    // Slight taper (radius shrinks top→top), with a tiny ripple to suggest
-    // growth bulges (deterministic sin).
+    // Slight taper (radius shrinks base→top), with a tiny ripple to suggest
+    // growth bulges (irrational sin multiplier so adjacent segments don't
+    // sync up — chosen for visual variety, not for any particular property).
     const radius = (rBase + (rTop - rBase) * t) + Math.sin(i * 1.7) * 0.025;
     // Cumulative lateral offset in the lean direction.
     const offset = (i + 1) * leanLen;
     const sx = leanUx * offset;
     const sz = leanUz * offset;
-    // Small per-segment twist (radians) for an organic feel.
+    // Small per-segment twist (radians) for an organic feel. Irrational
+    // multiplier so adjacent segments don't sync up.
     const twist = Math.sin(i * 0.9) * 0.10;
     // Scar color cycles through 3 shades.
     const scarColor =
@@ -111,6 +114,8 @@ export function palmTree({
   const leafTones = [leafColor, leafLight, leafColor, leafDark, leafColor, leafLight, leafColor, leafDark];
   for (let i = 0; i < frondCount; i++) {
     const az = (i / frondCount) * Math.PI * 2;
+    // Per-frond droop jitter — irrational multiplier so the 8 fronds don't
+    // sync up into a regular pattern.
     const droop = droopMean + Math.sin(i * 1.31) * droopJitter;
     const tone = leafTones[i % leafTones.length];
 
@@ -142,10 +147,10 @@ export function palmTree({
       // a small gap so it visibly emerges from the rib.
       const offsetZ = side * (leafLen / 2 + 0.04);
       leaflet.position.set(xPos, 0.01, offsetZ);
-      // Tip-up rotation: rotate around the rib's local X axis. Positive X
-      // rotation tilts +Z up; we want +Z tip up for side=+1 (rotate +angle),
-      // and -Z tip up for side=-1 (rotate -angle). Net effect: both sides
-      // lift their tips skyward like a recurved frond.
+      // Tip-up rotation: rotate around the rib's local X axis. In Three.js's
+      // right-handed frame, positive X rotation tilts +Z downward, so we use
+      // −angle for side=+1 (and +angle for side=−1) to lift both tips skyward
+      // — a recurved-droop silhouette.
       leaflet.rotation.x = -side * leafletTipUp;
       pivot.add(leaflet);
     }
@@ -176,7 +181,8 @@ export function palmTree({
     { x:  0.24, y: halfH - 0.60, z: -0.04 },
   ];
   for (const c of coconutLayout) {
-    // Stem: a thin cylinder from crown center to the coconut's top.
+    // Short stem stub sitting on top of the coconut (a tiny visible nub that
+    // reads as where the coconut attaches to the frond).
     const stemH = 0.18;
     const stem = cylMesh(stemR, stemR, stemH, coconutColor, c.x, c.y + coconutR + stemH / 2, c.z, 5);
     group.add(stem);
