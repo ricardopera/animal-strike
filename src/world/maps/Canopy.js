@@ -27,6 +27,8 @@ const COLORS = {
   leafLit: 0x3a7a4a,   // lighter foliage tier
   wall:    0x6a4a2a,   // treehouse walls
   lantern: 0xffcf6a,   // safe-route lantern glow
+  rail:    0x4a3220,   // dark guardrail posts/trim (contrasts with the deck)
+  railTop: 0x8a6a44,   // lighter rail cap (reads against sky)
 };
 
 // Satellite half-set: each site mirrors to (-x,-z) for 4 total (N/S/E/W).
@@ -37,6 +39,20 @@ const SAT_SITES = [
 
 // Platform heights.
 const Y = { LOW: 30, MID: 37, HIGH: 44, TOP: 51, SAT_UPPER: 40, CATWALK: 26, RING: 34 };
+
+// Guardrail dimensions. Rails are low collidable walls (1.1m tall) along the
+// edges of SAFE surfaces (decks + spokes) so a careless player can't walk off
+// into the void. Deliberately short enough to hop or shoot over intentionally.
+// Risky routes (catwalks, skill-gap ledges, ring bridges) stay UN-railed.
+// RAIL_T is generous (0.25m) so the rail reads clearly as a visible wall, not a
+// sub-pixel lip — on a fall-means-death map the safe-route cue must be obvious.
+const RAIL_H = 1.1;
+const RAIL_T = 0.25;
+// Rail posts: a darker vertical pillar every few meters along the rail, giving
+// the railing a clear "balustrade" silhouette against the sky.
+const POST_H = 1.3;
+const POST_T = 0.18;
+const POST_SPACING = 2.5;
 
 // Staggered-height spawns across platforms/walkways (anti-camp). None on the
 // king's top deck (no free power-position spawns).
@@ -84,6 +100,10 @@ function authorGeometry(place, placePair) {
   // 4 stacked platform decks.
   for (const y of [Y.LOW, Y.MID, Y.HIGH, Y.TOP]) {
     place(10, 0.6, 10, COLORS.plank, 0, y, 0, 'planks');
+    // Guardrails around the deck edge — a safe-route surface shouldn't drop a
+    // careless player into the void. The king deck is centered (its own 180°
+    // mirror) so buildDeckRailing uses place() for its 4 edges.
+    buildDeckRailing(place, placePair, 0, y, 10);
   }
   // Internal stair-steps connecting king levels (1m rise each — hop-up ladder).
   // A diagonal run of small boxes from LOW -> MID -> HIGH -> TOP. placePair
@@ -129,8 +149,10 @@ function buildSatellite(place, placePair, cx, cz) {
   placePair(2.4, 48, 2.4, COLORS.bark, cx, 24, cz, 'wood');
   // Lower platform (matches spoke height).
   placePair(6, 0.6, 6, COLORS.plank, cx, Y.LOW, cz, 'planks');
+  buildDeckRailing(place, placePair, cx, Y.LOW, 6, cz);
   // Upper platform (treehouse sits here in build()).
   placePair(5, 0.6, 5, COLORS.plank, cx, Y.SAT_UPPER, cz, 'planks');
+  buildDeckRailing(place, placePair, cx, Y.SAT_UPPER, 5, cz);
   // Stair-steps up the trunk from LOW -> SAT_UPPER.
   const steps = Math.round((Y.SAT_UPPER - Y.LOW) / 1);
   for (let s = 1; s <= steps; s++) {
@@ -147,8 +169,74 @@ function buildSpoke(placePair, cx, cz) {
   const mx = cx / 2, mz = cz / 2;
   // Orient: place a thin long box. For axis-aligned spokes (cardinal), w=len d=3.
   // cx or cz is 0 for our cardinals, so this simplifies to axis-aligned.
-  if (cz === 0) placePair(len, 0.5, 3, COLORS.plank, mx, Y.LOW, 0, 'planks');
-  else          placePair(3, 0.5, len, COLORS.plank, 0, Y.LOW, mz, 'planks');
+  if (cz === 0) {
+    placePair(len, 0.5, 3, COLORS.plank, mx, Y.LOW, 0, 'planks');
+    // Rails along both long edges (the z=±1.5 edges) — a safe route shouldn't
+    // drop players; rails make strafing across a spoke survivable.
+    buildEdgeRails(placePair, mx, Y.LOW + 0.25, 0, len, 'x');
+  } else {
+    placePair(3, 0.5, len, COLORS.plank, 0, Y.LOW, mz, 'planks');
+    buildEdgeRails(placePair, 0, Y.LOW + 0.25, mz, len, 'z');
+  }
+}
+
+// Guardrails around a square deck's 4 edges. `cx`,`cz` = deck center, `baseY` =
+// deck CENTER y (the deck is authored as place(size, 0.6, size, ..., cx, baseY, cz),
+// so its top is at baseY+0.3). `size` = full deck side length. For a centered
+// deck (cx===0 && cz===0, the king) each edge is its own 180° partner so we use
+// place(); for off-center satellite decks we use placePair() to also stamp the
+// twin. Each edge = a long rail cap + evenly-spaced darker posts (a balustrade).
+function buildDeckRailing(place, placePair, cx, baseY, size, cz = 0) {
+  const usePair = (cx !== 0 || cz !== 0);
+  // No texture name: rails render as solid colored boxes so their distinct
+  // railTop/rail colors actually show against the textured deck (a textured box
+  // would inherit the deck's wood map and the rail would vanish into the deck).
+  const stamp = (w, h, d, color, x, y, z) =>
+    usePair ? placePair(w, h, d, color, x, y, z) : place(w, h, d, color, x, y, z);
+  const half = size / 2;
+  const topY = baseY + 0.3;          // deck slab top (0.6-tall deck, baseY is its center)
+  const capY = topY + RAIL_H / 2;    // rail cap centered above the deck top
+  const postY = topY + POST_H / 2;   // posts rise slightly above the cap
+  const ext = size + RAIL_T;         // rails span the full edge + a hair of overhang
+  // Long rail caps along each edge (the visible top rail, lighter color).
+  stamp(ext, RAIL_H, RAIL_T, COLORS.railTop, cx, capY, cz + half);
+  stamp(ext, RAIL_H, RAIL_T, COLORS.railTop, cx, capY, cz - half);
+  stamp(RAIL_T, RAIL_H, ext, COLORS.railTop, cx + half, capY, cz);
+  stamp(RAIL_T, RAIL_H, ext, COLORS.railTop, cx - half, capY, cz);
+  // Darker posts spaced along each edge for a clear balustrade silhouette.
+  for (let p = -half + POST_SPACING / 2; p < half; p += POST_SPACING) {
+    stamp(POST_T, POST_H, POST_T, COLORS.rail, cx + p, postY, cz + half);
+    stamp(POST_T, POST_H, POST_T, COLORS.rail, cx + p, postY, cz - half);
+    stamp(POST_T, POST_H, POST_T, COLORS.rail, cx + half, postY, cz + p);
+    stamp(POST_T, POST_H, POST_T, COLORS.rail, cx - half, postY, cz + p);
+  }
+}
+
+// Two parallel guardrails along a walkway's long edges. `cx`,`cz` = walkway
+// center, `y` = rail center y, `len` = walkway length, `axis` = 'x' or 'z' (the
+// direction the length runs). Rails sit at ±1.5 (half the 3-wide walkway) on the
+// cross axis. placePair stamps the 180° twin. Each edge = a long cap + posts.
+// No texture: solid colors render the rail distinctly against the wood deck.
+function buildEdgeRails(placePair, cx, y, cz, len, axis) {
+  const half = 1.5; // walkway half-width (spokes are 3 wide)
+  const postY = y + (POST_H - RAIL_H) / 2; // posts rise above the cap
+  if (axis === 'x') {
+    // length runs along X; rails long-along-X, thin along Z, at z = cz ± half
+    placePair(len, RAIL_H, RAIL_T, COLORS.railTop, cx, y, cz + half);
+    placePair(len, RAIL_H, RAIL_T, COLORS.railTop, cx, y, cz - half);
+    for (let p = -len / 2 + POST_SPACING / 2; p < len / 2; p += POST_SPACING) {
+      placePair(POST_T, POST_H, POST_T, COLORS.rail, cx + p, postY, cz + half);
+      placePair(POST_T, POST_H, POST_T, COLORS.rail, cx + p, postY, cz - half);
+    }
+  } else {
+    // length runs along Z; rails long-along-Z, thin along X, at x = cx ± half
+    placePair(RAIL_T, RAIL_H, len, COLORS.railTop, cx + half, y, cz);
+    placePair(RAIL_T, RAIL_H, len, COLORS.railTop, cx - half, y, cz);
+    for (let p = -len / 2 + POST_SPACING / 2; p < len / 2; p += POST_SPACING) {
+      placePair(POST_T, POST_H, POST_T, COLORS.rail, cx + half, postY, cz + p);
+      placePair(POST_T, POST_H, POST_T, COLORS.rail, cx - half, postY, cz + p);
+    }
+  }
 }
 
 // Ring bridge: medium rope bridge between two satellites at y≈34.
