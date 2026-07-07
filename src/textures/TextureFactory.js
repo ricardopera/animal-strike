@@ -12,7 +12,8 @@ function key(name, opts) {
 
 /**
  * Get a cached procedural texture.
- * @param {string} name - one of: camo, wood, metal, concrete, fur, stripes, grid
+ * @param {string} name - one of: camo, wood, metal, concrete, fur, stripes,
+ *   grid, cobble, sand, turf, planks
  * @param {object} [opts] - { size=128, base=hex, accent=hex, seed }
  * @returns {THREE.CanvasTexture}
  */
@@ -65,6 +66,10 @@ function makeTexture(name, opts) {
     case 'fur': drawFur(ctx, size, base, accent, rand); break;
     case 'stripes': drawStripes(ctx, size, base, accent); break;
     case 'grid': drawGrid(ctx, size, base, accent); break;
+    case 'cobble': drawCobble(ctx, size, base, accent, rand); break;
+    case 'sand': drawSand(ctx, size, base, accent, rand); break;
+    case 'turf': drawTurf(ctx, size, base, accent, rand); break;
+    case 'planks': drawPlanks(ctx, size, base, accent, rand); break;
     default: /* just base */ break;
   }
 
@@ -188,5 +193,119 @@ function drawGrid(ctx, size, base, accent) {
   for (let i = 0; i <= 8; i++) {
     ctx.beginPath(); ctx.moveTo(i * step, 0); ctx.lineTo(i * step, size); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(0, i * step); ctx.lineTo(size, i * step); ctx.stroke();
+  }
+}
+
+// Warm cobblestone pavers: irregular rounded stones separated by dark mortar
+// grout. base = stone tone, accent = grout/shadow tone.
+function drawCobble(ctx, size, base, accent, rand) {
+  // mortar background
+  ctx.fillStyle = rgb(shade(accent, -0.25));
+  ctx.fillRect(0, 0, size, size);
+  // irregular rounded stones packed in a loose grid
+  const cells = 5;
+  const step = size / cells;
+  for (let gy = 0; gy < cells; gy++) {
+    for (let gx = 0; gx < cells; gx++) {
+      const cx = gx * step + step / 2 + (rand() - 0.5) * step * 0.3;
+      const cy = gy * step + step / 2 + (rand() - 0.5) * step * 0.3;
+      const rx = step * (0.32 + rand() * 0.12);
+      const ry = step * (0.32 + rand() * 0.12);
+      // per-stone tone variation
+      const tone = shade(base, (rand() - 0.5) * 0.22);
+      ctx.fillStyle = rgb(tone);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry, rand() * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+      // inner highlight + lower shadow for a beveled look
+      ctx.fillStyle = rgb(shade(tone, 0.18), 0.5);
+      ctx.beginPath();
+      ctx.ellipse(cx - rx * 0.2, cy - ry * 0.25, rx * 0.7, ry * 0.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = rgb(shade(tone, -0.28), 0.45);
+      ctx.beginPath();
+      ctx.ellipse(cx + rx * 0.15, cy + ry * 0.3, rx * 0.85, ry * 0.45, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+// Fine-grain beach sand: speckled warm grains with subtle wind ripples.
+function drawSand(ctx, size, base, accent, rand) {
+  // soft diagonal ripple bands
+  ctx.strokeStyle = rgb(shade(base, -0.08), 0.25);
+  ctx.lineWidth = 1;
+  for (let y = -size; y < size * 2; y += 6) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    for (let x = 0; x <= size; x += 8) {
+      ctx.lineTo(x, y + Math.sin(x * 0.2 + y * 0.07) * 2);
+    }
+    ctx.stroke();
+  }
+  // fine grains: dense speckle of light + dark dots
+  const grains = Math.floor(size * size * 0.35);
+  for (let i = 0; i < grains; i++) {
+    const x = rand() * size, y = rand() * size;
+    const dark = rand() > 0.5;
+    ctx.fillStyle = dark ? rgb(shade(accent, 0.15), 0.5) : rgb(shade(base, 0.12), 0.5);
+    ctx.fillRect(x, y, 1, 1);
+  }
+}
+
+// Grass turf with a dirt underlay: mottled green blades over patchy earth.
+// base reads as grass green, accent as dirt brown.
+function drawTurf(ctx, size, base, accent, rand) {
+  // patchy dirt blotches first (the earth showing through)
+  for (let i = 0; i < 10; i++) {
+    const x = rand() * size, y = rand() * size;
+    const r = size * (0.08 + rand() * 0.16);
+    ctx.fillStyle = rgb(shade(accent, (rand() - 0.5) * 0.2), 0.6);
+    ctx.beginPath();
+    ctx.ellipse(x, y, r, r * (0.6 + rand() * 0.4), rand() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // short upward grass blades in a couple of green shades
+  const blades = Math.floor(size * size * 0.5);
+  for (let i = 0; i < blades; i++) {
+    const x = rand() * size, y = rand() * size;
+    const len = 2 + rand() * 3;
+    const col = rand() > 0.5 ? shade(base, 0.12) : shade(base, -0.18);
+    ctx.strokeStyle = rgb(col, 0.5 + rand() * 0.4);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + (rand() - 0.5) * 1.5, y - len);
+    ctx.stroke();
+  }
+}
+
+// Wooden floor planks: horizontal boards separated by dark seams, with grain
+// running along each plank and a few knots. base = plank wood tone.
+function drawPlanks(ctx, size, base, accent, rand) {
+  const n = 5;
+  const step = size / n;
+  for (let i = 0; i < n; i++) {
+    const y0 = i * step;
+    // alternate plank tones for variety
+    const tone = shade(base, (i % 2 === 0 ? -1 : 1) * (0.04 + rand() * 0.06));
+    ctx.fillStyle = rgb(tone);
+    ctx.fillRect(0, y0, size, step);
+    // grain streaks along the plank
+    for (let g = 0; g < 18; g++) {
+      ctx.fillStyle = rgb(shade(tone, -0.12 - rand() * 0.12), 0.4);
+      const gx = rand() * size;
+      ctx.fillRect(gx, y0 + 1, 1 + rand() * 2, step - 2);
+    }
+    // occasional knot
+    if (rand() > 0.5) {
+      ctx.fillStyle = rgb(shade(tone, -0.35), 0.8);
+      ctx.beginPath();
+      ctx.ellipse(rand() * size, y0 + step / 2, 2 + rand() * 2, 1.5 + rand() * 1.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // dark seam between planks
+    ctx.fillStyle = rgb(shade(accent, -0.3), 0.7);
+    ctx.fillRect(0, y0, size, 1);
   }
 }

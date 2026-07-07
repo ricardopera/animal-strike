@@ -48,6 +48,12 @@ const _shotMuzzle2 = new THREE.Vector3();
 const _shotEnd = new THREE.Vector3();
 const _shotFar = new THREE.Vector3();
 
+// Slow sun azimuth drift so the scene feels alive over a match without a full
+// day/night cycle. ~1 full revolution per 10 minutes of real time — barely
+// noticeable moment-to-moment. Advanced by real frame dt in frame().
+const SUN_DRIFT_RADIANS_PER_SECOND = (Math.PI * 2) / 600; // 2π / 600s ≈ 10 min/rev
+let sunAzimuth = 0;
+
 // Build a vertical gradient sky texture from 4 stops [zenith, mid, haze, horizon].
 // Falls back to the original Plaza palette if stops are omitted (backward compat).
 function makeSkyTexture(stops) {
@@ -104,8 +110,13 @@ export class Game {
     this.camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 500);
 
     // Lighting — a warm/cool three-point rig with the key light casting shadows.
-    this.scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x4a4030, 0.55));
-    const dir = new THREE.DirectionalLight(0xfff2d6, 2.2);
+    // Defaults are captured here so loadMap() can restore them when a map's
+    // palette omits the optional hemisphere/sunColor/sunIntensity overrides.
+    this._hemiDefaults = { sky: 0xbfd8ff, ground: 0x4a4030, intensity: 0.55 };
+    this._sunDefaults = { color: 0xfff2d6, intensity: 2.2 };
+    this.hemisphere = new THREE.HemisphereLight(this._hemiDefaults.sky, this._hemiDefaults.ground, this._hemiDefaults.intensity);
+    this.scene.add(this.hemisphere);
+    const dir = new THREE.DirectionalLight(this._sunDefaults.color, this._sunDefaults.intensity);
     dir.position.set(40, 80, 30);
     dir.castShadow = true;
     dir.shadow.mapSize.set(2048, 2048);
@@ -318,6 +329,9 @@ export class Game {
     // Rebuild the environment map from this map's sky so metallic surfaces
     // reflect the right ambient color (fixes dark weapon skins).
     this._applyEnvironment(map.palette.sky);
+    // Per-map hemisphere/sun tint (optional palette overrides). Maps without
+    // these fields fall back to the rig defaults so they render identically.
+    this._applyMapLighting(map.palette);
     this.arenaGroup = map.build(this.scene, this.colliders, this.buildHelper);
   }
 
@@ -332,6 +346,44 @@ export class Game {
     if (this._envTex) this._envTex.dispose();
     this.scene.environment = env;
     this._envTex = env;
+  }
+
+  // Apply the optional per-map hemisphere/sun tint. Palette fields are OPTIONAL:
+  // when absent, restore the rig defaults so maps that never set them (the
+  // originals) keep their exact prior look.
+  _applyMapLighting(palette) {
+    const h = palette.hemisphere;
+    if (Array.isArray(h) && h.length === 2) {
+      this.hemisphere.color.setHex(h[0]);
+      this.hemisphere.groundColor.setHex(h[1]);
+    } else {
+      this.hemisphere.color.setHex(this._hemiDefaults.sky);
+      this.hemisphere.groundColor.setHex(this._hemiDefaults.ground);
+    }
+    this.hemisphere.intensity = this._hemiDefaults.intensity;
+
+    if (Number.isInteger(palette.sunColor)) {
+      this.sun.color.setHex(palette.sunColor);
+    } else {
+      this.sun.color.setHex(this._sunDefaults.color);
+    }
+    this.sun.intensity = (typeof palette.sunIntensity === 'number')
+      ? palette.sunIntensity
+      : this._sunDefaults.intensity;
+  }
+
+  // Keep the sun's shadow frustum centered on the target (player) while applying
+  // the slow azimuth drift: the base horizontal offset (40,30) is rotated around
+  // the target by `sunAzimuth`, height stays 80. A very subtle warm tint at low
+  // angle gives the arc a sense of life. Works whether shadows are on or off
+  // (the position still drives the directional key light's direction).
+  _updateSun(tx, ty, tz) {
+    if (!this.sun) return;
+    const off = 40, fwd = 30;
+    const cos = Math.cos(sunAzimuth), sin = Math.sin(sunAzimuth);
+    this.sun.position.set(tx + off * cos + fwd * sin, 80, tz - off * sin + fwd * cos);
+    this.sun.target.position.set(tx, ty, tz);
+    this.sun.target.updateMatrixWorld();
   }
 
 
@@ -718,11 +770,7 @@ export class Game {
     this.camera.rotation.y = this.player.yaw;
     this.camera.rotation.x = this.player.pitch;
     this.camera.updateMatrixWorld();
-    if (this.sun) {
-      this.sun.position.set(ls.x + 40, 80, ls.z + 30);
-      this.sun.target.position.set(ls.x, ls.y, ls.z);
-      this.sun.target.updateMatrixWorld();
-    }
+    this._updateSun(ls.x, ls.y, ls.z);
     const showFP = this.match.active && ls.alive;
     this.firstPersonView.setVisible(showFP);
     if (showFP) {
@@ -753,6 +801,8 @@ export class Game {
 
   frame(realDt) {
     if (this.paused) return;
+    // Advance the slow sun azimuth drift by real frame dt (see SUN_DRIFT_*).
+    sunAzimuth += realDt * SUN_DRIFT_RADIANS_PER_SECOND;
     // Multiplayer path: send input + render from server snapshots. Keeps the
     // single-player inline sim path below fully untouched.
     if (this.mpActive) { this.frameMultiplayer(realDt); return; }
@@ -847,12 +897,8 @@ export class Game {
     this.camera.rotation.x = this.player.pitch;
     this.camera.updateMatrixWorld();
     // Keep the sun's shadow frustum centered on the player so shadows stay
-    // crisp wherever you roam on the large map.
-    if (this.sun) {
-      this.sun.position.set(eye.x + 40, 80, eye.z + 30);
-      this.sun.target.position.set(eye.x, eye.y, eye.z);
-      this.sun.target.updateMatrixWorld();
-    }
+    // crisp wherever you roam on the large map (with the slow azimuth drift).
+    this._updateSun(eye.x, eye.y, eye.z);
     // First-person viewmodel: visible only while playing + alive
     const showFP = this.match.active && this.player.alive;
     this.firstPersonView.setVisible(showFP);

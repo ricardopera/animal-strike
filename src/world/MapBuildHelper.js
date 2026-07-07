@@ -10,7 +10,7 @@ import { get as getTexture } from '../textures/TextureFactory.js';
 //   helper.placePair(place, w,h,d,color,x,y,z,'wood');
 
 export function makeBuildHelper() {
-  return { box, placePair, shadeHex, colliderPass };
+  return { box, placePair, shadeHex, contactShadow, colliderPass };
 }
 
 // A collider-only build mode: same box()/placePair() geometry authoring, but
@@ -73,4 +73,50 @@ function placePair(place, w, h, d, color, x, y, z, texName, texOpts) {
   if (x !== 0 || z !== 0) {
     place(box(w, h, d, color, -x, y, -z, texName, texOpts));
   }
+}
+
+// A cached radial-gradient "blob" texture for soft contact shadows. Drawn once
+// and reused by every contactShadow() call (it's resolution-independent).
+let _blobTex = null;
+function blobTexture() {
+  if (_blobTex) return _blobTex;
+  const s = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = s;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  g.addColorStop(0.0, 'rgba(0,0,0,0.55)');
+  g.addColorStop(0.6, 'rgba(0,0,0,0.28)');
+  g.addColorStop(1.0, 'rgba(0,0,0,0.0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  _blobTex = tex;
+  return tex;
+}
+
+// A flat dark radial-gradient quad laid just above the ground (y≈0.02) under a
+// box/cover piece so it does not appear to float on the flat ground slab.
+// PURELY VISUAL: returns a mesh the caller adds to its group; it is NON-collidal
+// (do NOT route it through the `place()` callback, which would register an AABB).
+// `group` = the map's THREE.Group; (x,z) = world center; w,d = footprint size.
+function contactShadow(group, x, z, w, d) {
+  const tex = blobTexture().clone();
+  tex.needsUpdate = true;
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    depthWrite: false,
+    opacity: 0.9,
+  });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
+  mesh.rotation.x = -Math.PI / 2; // lay flat
+  mesh.position.set(x, 0.02, z);
+  mesh.renderOrder = 1;            // draw above the ground slab
+  // No shadows: it IS the fake shadow; casting/receiving would double-darken.
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  group.add(mesh);
+  return mesh;
 }

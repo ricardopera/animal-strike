@@ -101,6 +101,12 @@ function build(scene, colliders, helper) {
     if (x !== 0 || z !== 0) place(w,h,d,color,-x,y,-z,texName,texOpts);
   };
   authorGeometry(place, placePair);
+  // Soft contact-shadow decals under prominent cover pieces so they don't appear
+  // to float on the flat ground slab. NON-collidable: added straight to the group,
+  // never through `place()` (which would register an AABB).
+  helper.contactShadow(group, 0, 0, 13, 13);                 // central structure
+  helper.contactShadow(group, -18, -10, 6.5, 6.5);           // crate cluster + its mirror
+  helper.contactShadow(group, 10, 18, 6.5, 6.5);             // crate cluster + its mirror
   scene.add(group);
   return group;
 }
