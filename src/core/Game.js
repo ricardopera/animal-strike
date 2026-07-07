@@ -8,6 +8,7 @@ import { InputState } from './InputState.js';
 import { MAPS, getMapById } from '../world/Maps.js';
 import { makeBuildHelper } from '../world/MapBuildHelper.js';
 import { ColliderStore } from '../world/ColliderStore.js';
+import { checkFallDeath } from '../world/FallDeath.js';
 import { createPlayer, eyePosition } from '../player/Player.js';
 import { tickMovement } from '../player/MovementController.js';
 import { MOVEMENT as M } from '../config/Movement.js';
@@ -704,6 +705,25 @@ export class Game {
     this.voice.playAnimal(player.animalId, 'spawn');
   }
 
+  // Environmental fall death (Canopy and other killY maps). No frag is awarded
+  // — there is no shooter. Mirrors the combat death path minus the shooter
+  // bookkeeping: marks the player dead, logs the void-fall, plays the victim's
+  // death voice, and queues a normal respawn. Reuses respawnTimers/respawnPlayer.
+  killByFall(player) {
+    player.alive = false;
+    player.health = 0;
+    player.deaths += 1;
+    if (player.view) player.view.setVisible(!player.isLocal); // local stays hidden (first person)
+    const name = player.isLocal ? 'You' : player.id;
+    this.hud.addKill(`${name} fell into the void`);
+    if (player.animalId) this.voice.playAnimal(player.animalId, 'death');
+    if (player.isLocal) {
+      this.killstreak = 0;
+      this.hud.setKillstreak(0);
+    }
+    this.respawnTimers.set(player.id, MATCH.respawnDelay);
+  }
+
   frameMultiplayer(realDt) {
     if (this.paused) return;
     if (!this.netClient || !this.remoteView) return;
@@ -873,7 +893,10 @@ export class Game {
         }
       }
 
-      if (this.match.active && this.player.alive) tickMovement(this.player, dt, this.colliders);
+      if (this.match.active && this.player.alive) {
+        tickMovement(this.player, dt, this.colliders);
+        if (this.player.alive && checkFallDeath(this.player, this.activeMap)) this.killByFall(this.player);
+      }
       const firing = this.match.active && this.player.alive && this.player.intent.firing;
       const reloadReq = this.input.consumeReloadRequest();
       this.weapon.update(dt, firing, reloadReq);
@@ -882,6 +905,7 @@ export class Game {
         if (!bot.alive) continue;
         bot.brain.update(dt, this.entities.enemiesOf(bot), this.colliders);
         tickMovement(bot, dt, this.colliders);
+        if (bot.alive && checkFallDeath(bot, this.activeMap)) this.killByFall(bot);
         bot.weapon.update(dt, bot.intent.firing, bot.intent.reloadRequested);
         // Occasional per-animal taunt for ambience (jittered cooldown ~10-18s).
         bot._tauntTimer = (bot._tauntTimer != null ? bot._tauntTimer : 8 + Math.random() * 8) - dt;
