@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { palmTree } from '../world/props/PalmTree.js';
 import { cottage, well, marketStall, haystack, bannerPole, cart, barrel } from '../world/props/Village.js';
+import { translateBox } from '../world/props/_shared.js';
 
 // Smoke/contract tests for the V6 themed prop factories. These factories use
 // THREE primitives only (no document), so they're headless-safe without a DOM
@@ -74,5 +75,15 @@ describe('palmTree', () => {
     expect(tall.trunkBox.max[1]).toBe(10);
     const short = palmTree({ height: 4 });
     expect(short.trunkBox.max[1]).toBe(4);
+  });
+});
+
+describe('translateBox', () => {
+  it('returns a new AABB shifted by (x, z) with y unchanged, without mutating the input', () => {
+    const box = { min: [-1, 0, -2], max: [1, 4, 2] };
+    const moved = translateBox(box, 10, -5);
+    expect(moved).toEqual({ min: [9, 0, -7], max: [11, 4, -3] });
+    // original is untouched (non-mutating)
+    expect(box).toEqual({ min: [-1, 0, -2], max: [1, 4, 2] });
   });
 });

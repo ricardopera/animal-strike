@@ -12,6 +12,16 @@ import * as THREE from 'three';
 // group, and pushes the WaterPlane instance onto `group.userData.updatables`
 // (an array the Game loop drains each frame via update(dt)).
 //
+// Updatables dispose contract: updatables registered via
+// `group.userData.updatables` are updated each frame by Game but Game never calls
+// their `dispose()`. Therefore an updatable MUST place ALL of its GPU resources
+// (meshes/sprites and their materials/textures) as descendants of the arena group
+// so Game.loadMap()'s teardown traverses and disposes them. Do NOT hold non-Object3D
+// resources (render targets, audio nodes, listeners) without disposing them
+// elsewhere. WaterPlane satisfies this: `.mesh` is added to the arena group and the
+// ripple texture is referenced via `material.map`, so teardown's per-mesh
+// `material.map.dispose()` + `material.dispose()` reclaims everything.
+//
 // Headless-safe: the canvas texture is only built when `document` exists; in a
 // headless env the material falls back to flat color (still constructs + updates
 // without throwing).

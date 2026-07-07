@@ -54,3 +54,14 @@ export function boxAABB(w, h, d) {
     max: [w / 2, h, d / 2],
   };
 }
+
+// Return a NEW {min,max} AABB equal to `box` translated by (x, z); y is unchanged.
+// Non-mutating: `box` is left untouched. Lets maps do
+// `palm.boxes.map(b => translateBox(b, x, z))` cleanly when stamping colliders at
+// world positions, without hand-rolling sign-prone index math per call site.
+export function translateBox(box, x, z) {
+  return {
+    min: [box.min[0] + x, box.min[1], box.min[2] + z],
+    max: [box.max[0] + x, box.max[1], box.max[2] + z],
+  };
+}

@@ -13,6 +13,16 @@ import * as THREE from 'three';
 // are disposed on map teardown — no cross-map leaks) and pushes `this` onto
 // `group.userData.updatables` so the Game loop updates it.
 //
+// Updatables dispose contract: updatables registered via
+// `group.userData.updatables` are updated each frame by Game but Game never calls
+// their `dispose()`. Therefore an updatable MUST place ALL of its GPU resources
+// (meshes/sprites and their materials/textures) as descendants of the arena group
+// so Game.loadMap()'s teardown traverses and disposes them. Do NOT hold non-Object3D
+// resources (render targets, audio nodes, listeners) without disposing them
+// elsewhere. Clouds satisfies this: every sprite is added to `group`, and each
+// sprite's material owns a cloned `.map` texture, so teardown's per-sprite
+// `material.map.dispose()` reclaims everything without touching the shared template.
+//
 // Headless-safe: the canvas texture is only built when `document` exists; sprites
 // still construct with a flat color when headless (no throw).
 
@@ -26,7 +36,10 @@ function seededRand(seed) {
 }
 
 // Build a soft-puff CanvasTexture: radial gradient white→transparent with a few
-// overlapping blobs for a natural cloud silhouette. Cached statically (built once).
+// overlapping blobs for a natural cloud silhouette. Cached statically (built once)
+// and NEVER disposed directly: each sprite takes a `.clone()` of it (see the
+// constructor), so Game's per-sprite teardown disposes only the clones, leaving
+// this template valid for the next map's clouds.
 let _puffTex = null;
 function puffTexture(color, opacity) {
   if (typeof document === 'undefined') return null;
@@ -101,7 +114,15 @@ export class Clouds {
     for (let i = 0; i < count; i++) {
       let mat;
       if (tex) {
-        mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity, depthWrite: false });
+        // Clone the shared cached puff texture per-sprite (mirrors
+        // MapBuildHelper.box()'s `tex.clone()` and contactShadow()'s
+        // `blobTexture().clone()`). Each SpriteMaterial then owns its own map,
+        // so Game.loadMap() teardown's per-sprite `m.map.dispose()` is safe and
+        // never disposes the shared `_puffTex` out from under the next map.
+        const map = tex.clone();
+        map.needsUpdate = true;
+        map.colorSpace = THREE.SRGBColorSpace;
+        mat = new THREE.SpriteMaterial({ map, transparent: true, opacity, depthWrite: false });
       } else {
         mat = new THREE.SpriteMaterial({ color, transparent: true, opacity, depthWrite: false });
       }
@@ -130,10 +151,11 @@ export class Clouds {
   dispose() {
     if (this._disposed) return;
     this._disposed = true;
-    // Sprites share a single cached puff texture — don't dispose it per-instance.
-    for (const s of this._sprites) {
-      if (s.material) s.material.dispose();
-    }
+    // Per the updatables dispose contract (see module header), Game.loadMap()
+    // teardown already traverses the arena group and disposes every sprite's
+    // material + its `material.map` (the per-sprite clone). The shared cached
+    // `_puffTex` is intentionally NOT disposed here — only clones are. So
+    // dispose() just drops our references; no GPU resource is left dangling.
     this._sprites = [];
   }
 }

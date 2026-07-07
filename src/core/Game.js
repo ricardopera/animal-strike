@@ -145,6 +145,13 @@ export class Game {
     // Clouds, ...). Maps push updatables onto the returned group's
     // userData.updatables; loadMap() copies that array here so the frame loop can
     // drain it without maps needing a handle to the Game.
+    //
+    // UPDATABLES DISPOSE CONTRACT: Game updates these each frame but never calls
+    // their `dispose()`. An updatable MUST place ALL of its GPU resources
+    // (meshes/sprites and their materials/textures) as descendants of the arena
+    // group so loadMap()'s teardown traverses and disposes them. Updatables must
+    // NOT hold non-Object3D resources (render targets, audio nodes, listeners)
+    // without disposing them elsewhere — those would leak across map rotation.
     this.updatables = [];
     this.activeMap = MAPS[0];          // default map; MainMenu / rotation can change it
     this.rotationIndex = 0;
