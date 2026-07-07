@@ -2,15 +2,28 @@ import * as THREE from 'three';
 import { cylMesh, boxMesh, sphereMesh, shadeHex, boxAABB } from './_shared.js';
 
 // A tropical palm tree prop (for the Tropic map). Composed from low-poly THREE
-// primitives: a slightly tapered trunk, a crown of angled fronds, and a few
-// coconuts. Deterministic — no Math.random (a fixed frond layout is used so the
-// collider and the visual always agree).
+// primitives:
+//   - Segmented curved trunk (8 short cylinder segments stacked with a small
+//     deterministic lean and twist, alternating trunk-color shades to read as
+//     old leaf-base scarring).
+//   - Crown of 8 palm fronds, each a thin central rib with ~12 leaflets
+//     alternating left/right (a feather / fish-skeleton silhouette) drooping
+//     downward ~42° with per-frond variation. Two leaflet-tone variants per
+//     frond for visual depth.
+//   - A cluster of 6 coconuts hanging in two rows just under the crown, each
+//     with a tiny stem connecting to the crown center.
+//
+// Deterministic — no Math.random. A fixed frond layout + per-index trig
+// functions drive every offset/twist, so the same opts always produce the same
+// tree (verifiable in Props.test.js).
 //
 // Returns { group, trunkBox }:
 //   group     — THREE.Group containing the whole tree (trunk + fronds + coconuts)
 //   trunkBox  — an AABB {min,max} describing the trunk collider at the LOCAL
-//               origin. The fronds/coconuts are NON-collidable. The caller
-//               translates both `group` and `trunkBox` by the same (x,z) offset.
+//               origin. The fronds/coconuts are NON-collidable. The Tropic map
+//               deliberately registers its own collidable place() box at the
+//               same (x,z) and ignores `trunkBox`, so the visual is free to
+//               curve without breaking collision.
 export function palmTree({
   trunkColor = 0x8a6a44,
   leafColor = 0x2faa55,
@@ -19,42 +32,156 @@ export function palmTree({
   const group = new THREE.Group();
   group.name = 'palmTree';
 
-  // --- Trunk: slightly tapered cylinder, low-poly (7 radial segments). ---
-  const trunk = cylMesh(0.35, 0.5, height, trunkColor, 0, height / 2, 0, 7);
-  group.add(trunk);
-
-  // --- Crown: 6 fronds angled outward+downward in a palm silhouette. ---
-  // Deterministic layout: 6 evenly-spaced azimuths, each frond is a flattened
-  // box rotated to droop. `halfH` is the trunk's top Y.
+  // -----------------------------------------------------------------------
+  // TRUNK — segmented, gently curved, with a small deterministic lean.
+  //
+  // Stack `trunkSegments` short cylinders. Each segment:
+  //   - sits at y = (i+0.5) * segH, centered on x/z = (0,0) at the LOCAL origin
+  //   - has its radius taper slightly from base→top (rBase → rTop)
+  //   - is offset laterally by a tiny cumulative amount in a FIXED direction
+  //     so the trunk leans as a whole (deterministic; not random)
+  //   - is rotated around its Y axis by a small per-segment twist
+  //   - uses an alternating shade (base / slightly lighter / slightly darker)
+  //     so adjacent rings read as old leaf scars
+  // The trunk's TOP edge is at y = height; the crown pivot sits exactly there.
+  const trunkSegments = 8;
+  const segH = height / trunkSegments;
+  const rBase = 0.48;
+  const rTop = 0.38;
+  // Lean direction (deterministic — fixed XZ unit vector). Tiny per-segment
+  // offsets accumulate to a ~6° lean over the trunk's height.
+  const leanLen = 0.06; // lateral offset per segment in the lean direction
+  const leanDx = 1.0;
+  const leanDz = 0.35;
+  const leanMag = Math.hypot(leanDx, leanDz);
+  const leanUx = leanDx / leanMag;
+  const leanUz = leanDz / leanMag;
+  // Pre-compute alternating scar shades (base / lighter / darker).
+  const trunkScarA = shadeHex(trunkColor, 0.10);   // sun-bleached ring
+  const trunkScarB = shadeHex(trunkColor, -0.10);  // shadowed ring
+  for (let i = 0; i < trunkSegments; i++) {
+    const t = i / Math.max(1, trunkSegments - 1); // 0 at base, 1 at top
+    // Slight taper (radius shrinks top→top), with a tiny ripple to suggest
+    // growth bulges (deterministic sin).
+    const radius = (rBase + (rTop - rBase) * t) + Math.sin(i * 1.7) * 0.025;
+    // Cumulative lateral offset in the lean direction.
+    const offset = (i + 1) * leanLen;
+    const sx = leanUx * offset;
+    const sz = leanUz * offset;
+    // Small per-segment twist (radians) for an organic feel.
+    const twist = Math.sin(i * 0.9) * 0.10;
+    // Scar color cycles through 3 shades.
+    const scarColor =
+      i % 3 === 0 ? trunkColor : (i % 3 === 1 ? trunkScarA : trunkScarB);
+    const seg = cylMesh(radius, radius, segH, scarColor, sx, (i + 0.5) * segH, sz, 8);
+    seg.rotation.y = twist;
+    group.add(seg);
+  }
+  // The crown pivot Y sits at the top of the trunk (halfH).
   const halfH = height;
-  const frondCount = 6;
+
+  // -----------------------------------------------------------------------
+  // FRONDS — 8 fronds, each a thin rib with ~12 leaflets.
+  //
+  // Layout: 8 evenly-spaced azimuths, each frond parented to a pivot Group
+  // anchored at the trunk top. The pivot rotates around Y (azimuth) then tilts
+  // down around its local X (~42° droop). Inside the pivot:
+  //   - A central rib (thin elongated box) extends along +X from the pivot.
+  //   - 12 leaflets (BoxGeometry 0.05 × 0.05 × leafLen) alternate left/right
+  //     along the rib, sized like a feather (peak length mid-rib, taper at
+  //     both ends). Each leaflet is tilted UP at the tip ~22° to suggest
+  //     recurved droop.
+  // Per-frond tone variation: 3 variants (base, light, dark) cycled so the
+  // crown reads as a mix of young and older fronds.
+  const frondCount = 8;
   const frondLen = 3.2;
+  const ribW = 0.10;
+  const ribH = 0.07;
+  const leafletCount = 12;
+  const maxLeafletLen = 0.62;
+  // Mean droop angle + per-frond offset for variation.
+  const droopMean = -Math.PI / 180 * 42;
+  const droopJitter = Math.PI / 180 * 5;
+  // Leaflet tip-up tilt (recurved droop).
+  const leafletTipUp = Math.PI / 180 * 22;
+  // Three leaf tones: base / +12% lighter / -10% darker. Mixed across the
+  // crown so the silhouette reads as a mix of young and old fronds.
   const leafLight = shadeHex(leafColor, 0.12);
+  const leafDark = shadeHex(leafColor, -0.10);
+  const leafTones = [leafColor, leafLight, leafColor, leafDark, leafColor, leafLight, leafColor, leafDark];
   for (let i = 0; i < frondCount; i++) {
     const az = (i / frondCount) * Math.PI * 2;
-    // Each frond: a thin flat box, pivoted at the crown center, pointing outward.
-    const frond = boxMesh(frondLen, 0.12, 0.7, i % 2 === 0 ? leafColor : leafLight);
-    // Position the frond's pivot at the trunk top, then rotate so it extends
-    // outward and tilts downward (palm droop). We parent the frond to a small
-    // pivot group so rotation happens about the crown center, not the box center.
+    const droop = droopMean + Math.sin(i * 1.31) * droopJitter;
+    const tone = leafTones[i % leafTones.length];
+
+    // Pivot at the trunk top; rotation: first around Y (azimuth), then around
+    // local X (droop). Order matters in Euler — set z=0 explicitly so the
+    // default XYZ order applies cleanly.
     const pivot = new THREE.Group();
     pivot.position.set(0, halfH, 0);
-    pivot.rotation.y = az;
-    // tilt down ~35° around the local X (now rotated by az) so the frond droops.
-    pivot.rotation.x = -Math.PI / 180 * 35;
-    // shift the frond out along its length so it sits at the pivot's edge
-    frond.position.set(frondLen / 2, 0, 0);
-    pivot.add(frond);
+    pivot.rotation.set(droop, az, 0, 'YXZ');
+
+    // Central rib: thin elongated box along +X, shifted so its BASE sits at
+    // the pivot and it extends outward.
+    const rib = boxMesh(frondLen, ribH, ribW, tone);
+    rib.position.set(frondLen / 2, 0, 0);
+    pivot.add(rib);
+
+    // Leaflets: alternate ±Z along the rib, with feather-tapered lengths.
+    for (let j = 0; j < leafletCount; j++) {
+      const t = (j + 1) / (leafletCount + 1); // 0..1 along rib, skipping ends
+      const xPos = t * frondLen;
+      // Feather profile: leaflet length peaks mid-rib, tapers to both ends.
+      const leafLen = maxLeafletLen * Math.sin(t * Math.PI);
+      // Side: +1 = right, -1 = left. Slight darker tip tint as j → ends.
+      const side = j % 2 === 0 ? 1 : -1;
+      // Leaflet box: thin in X (depth along rib), thin in Y (height), long in
+      // Z (length sticking out perpendicular to rib).
+      const leaflet = boxMesh(0.05, 0.05, leafLen, tone);
+      // Position the leaflet's center outward from the rib by ~leafLen/2 +
+      // a small gap so it visibly emerges from the rib.
+      const offsetZ = side * (leafLen / 2 + 0.04);
+      leaflet.position.set(xPos, 0.01, offsetZ);
+      // Tip-up rotation: rotate around the rib's local X axis. Positive X
+      // rotation tilts +Z up; we want +Z tip up for side=+1 (rotate +angle),
+      // and -Z tip up for side=-1 (rotate -angle). Net effect: both sides
+      // lift their tips skyward like a recurved frond.
+      leaflet.rotation.x = -side * leafletTipUp;
+      pivot.add(leaflet);
+    }
+
     group.add(pivot);
   }
 
-  // --- Coconuts: a few small dark spheres tucked just under the crown. ---
+  // -----------------------------------------------------------------------
+  // COCONUTS — a tight cluster of 6 hanging in two natural rows just under
+  // the crown. Each coconut has a short stem (thin cylinder) connecting to
+  // the crown center. Radius slightly larger than the old palm (0.22 vs
+  // 0.18) so they're clearly visible at gameplay distance.
   const coconutColor = shadeHex(trunkColor, -0.45);
-  const coconutCount = 4;
-  for (let i = 0; i < coconutCount; i++) {
-    const az = (i / coconutCount) * Math.PI * 2 + Math.PI / 6;
-    const r = 0.35;
-    const coco = sphereMesh(0.18, coconutColor, Math.cos(az) * r, halfH - 0.15, Math.sin(az) * r, 6);
+  const coconutR = 0.22;
+  const stemR = 0.04;
+  // Deterministic positions in a cluster (XZ offsets from crown center, with
+  // two Y rows — the back row slightly lower).
+  // Front row (3 coconuts, slightly forward), back row (3 coconuts, slightly
+  // lower and offset).
+  const coconutLayout = [
+    // Front row at Y = halfH - 0.35
+    { x:  0.18, y: halfH - 0.35, z:  0.32 },
+    { x: -0.22, y: halfH - 0.40, z:  0.20 },
+    { x:  0.04, y: halfH - 0.30, z: -0.20 },
+    // Back row at Y = halfH - 0.55 (slightly lower, behind)
+    { x:  0.10, y: halfH - 0.55, z:  0.05 },
+    { x: -0.16, y: halfH - 0.50, z: -0.18 },
+    { x:  0.24, y: halfH - 0.60, z: -0.04 },
+  ];
+  for (const c of coconutLayout) {
+    // Stem: a thin cylinder from crown center to the coconut's top.
+    const stemH = 0.18;
+    const stem = cylMesh(stemR, stemR, stemH, coconutColor, c.x, c.y + coconutR + stemH / 2, c.z, 5);
+    group.add(stem);
+    // Coconut: sphere at the layout position.
+    const coco = sphereMesh(coconutR, coconutColor, c.x, c.y, c.z, 7);
     group.add(coco);
   }
 
