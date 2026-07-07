@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { boxMesh, cylMesh, sphereMesh, shadeHex, boxAABB } from './_shared.js';
+import { loadOrFallback } from '../../textures/AssetLoader.js';
 
 // Medieval/village themed prop factories (for the Haven map). Each returns
 // { group, boxes } where:
@@ -12,11 +13,16 @@ import { boxMesh, cylMesh, sphereMesh, shadeHex, boxAABB } from './_shared.js';
 // non-collidable by design — collision uses one simple footprint box per prop.
 
 // A cozy cottage: 4 walls + a peaked gable roof + door + windows.
+// Optional `wallTexture` / `roofTexture` (asset paths) are applied to the wall
+// and roof materials via loadOrFallback (flat color is the fallback while the
+// image loads, or in headless/test environments).
 export function cottage({
   w = 6,
   d = 5,
   wallColor = 0xd8c39a,
   roofColor = 0x9a6b3f,
+  wallTexture = null,
+  roofTexture = null,
 } = {}) {
   const group = new THREE.Group();
   group.name = 'cottage';
@@ -25,10 +31,11 @@ export function cottage({
 
   // Walls: one solid box reads as the wall mass (cheap, and gives a clean collider).
   const walls = boxMesh(w, wallH, d, wallColor, 0, wallH / 2, 0);
+  if (wallTexture) loadOrFallback(wallTexture, walls.material);
   group.add(walls);
 
-  // Peaked gable roof: two angled boxes forming an inverted-V. The roof sits
-  // on top of the walls; its peak runs along the Z axis.
+  // Peaked gable roof: two angled boxes meeting at a central ridge (an upward
+  // "^"). The roof sits on top of the walls; its peak runs along the Z axis.
   const roofThick = 0.3;
   const roofOverhang = 0.6;
   const roofSpan = w / 2 + roofOverhang; // half-width of the roof slope
@@ -38,15 +45,20 @@ export function cottage({
   const slopeLen = Math.sqrt(roofSpan * roofSpan + roofPitch * roofPitch);
   const slopeAngle = Math.atan2(roofPitch, roofSpan);
   const roofY = wallH; // base of roof = top of walls
-  // Left slope
+  // Left slope (x<0): rotate by -slopeAngle so it rises from the left eave UP
+  // toward the central ridge. (Positive slopeAngle here would make it dip
+  // toward the center — a valley/butterfly roof.)
   const left = boxMesh(roofThick, slopeLen, roofLen, roofColor);
-  left.rotation.z = slopeAngle;
+  left.rotation.z = -slopeAngle;
   left.position.set(-roofSpan / 2, roofY + roofPitch / 2, 0);
+  if (roofTexture) loadOrFallback(roofTexture, left.material);
   group.add(left);
-  // Right slope
+  // Right slope (x>0): rotate by +slopeAngle so it rises from the right eave
+  // UP toward the central ridge.
   const right = boxMesh(roofThick, slopeLen, roofLen, roofColor);
-  right.rotation.z = -slopeAngle;
+  right.rotation.z = slopeAngle;
   right.position.set(roofSpan / 2, roofY + roofPitch / 2, 0);
+  if (roofTexture) loadOrFallback(roofTexture, right.material);
   group.add(right);
 
   // Door: a dark box on the +Z face.
@@ -89,18 +101,21 @@ export function well({
   const postR = cylMesh(0.1, 0.1, postH, postColor, rimR - 0.15, rimH + postH / 2, 0, 6);
   group.add(postL, postR);
 
-  // Pitched roof over the posts: two angled boxes forming an inverted-V along Z.
+  // Pitched roof over the posts: two angled boxes meeting at a central ridge
+  // (an upward "^") running along Z. Rotation signs chosen so each slope rises
+  // from its outer eave UP toward the center (positive slopeAngle on the right,
+  // negative on the left) — the opposite signs would form a valley roof.
   const roofSpan = rimR + 0.3;
   const roofPitch = 0.9;
   const slopeLen = Math.sqrt(roofSpan * roofSpan + roofPitch * roofPitch);
   const slopeAngle = Math.atan2(roofPitch, roofSpan);
   const roofBaseY = rimH + postH;
   const left = boxMesh(0.2, slopeLen, rimR * 2 + 0.4, shadeHex(stoneColor, -0.1));
-  left.rotation.z = slopeAngle;
+  left.rotation.z = -slopeAngle;
   left.position.set(-roofSpan / 2, roofBaseY + roofPitch / 2, 0);
   group.add(left);
   const right = boxMesh(0.2, slopeLen, rimR * 2 + 0.4, shadeHex(stoneColor, -0.1));
-  right.rotation.z = -slopeAngle;
+  right.rotation.z = slopeAngle;
   right.position.set(roofSpan / 2, roofBaseY + roofPitch / 2, 0);
   group.add(right);
 
@@ -110,9 +125,11 @@ export function well({
 }
 
 // A market stall: wooden frame (posts + crossbeams) + striped awning + counter table.
+// Optional `awningTexture` is applied to the awning material (flat color otherwise).
 export function marketStall({
   frameColor = 0x7a5a3a,
   awningColor = 0xc84a4a,
+  awningTexture = null,
 } = {}) {
   const group = new THREE.Group();
   group.name = 'marketStall';
@@ -139,6 +156,7 @@ export function marketStall({
   const awningAngle = Math.atan2(awningPitch, stallD);
   const awning = boxMesh(stallW + 0.4, 0.12, awningLen, awningColor, 0, postH + awningPitch / 2, 0);
   awning.rotation.x = awningAngle;
+  if (awningTexture) loadOrFallback(awningTexture, awning.material);
   group.add(awning);
   // Stripe accents: two lighter bands across the awning (flat boxes on top).
   const stripeColor = shadeHex(awningColor, 0.55);
@@ -179,6 +197,7 @@ export function haystack({
 export function bannerPole({
   poleColor = 0x6a4a2a,
   bannerColor = 0x3a5a8a,
+  bannerTexture = null,
 } = {}) {
   const group = new THREE.Group();
   group.name = 'bannerPole';
@@ -195,6 +214,7 @@ export function bannerPole({
 
   // Hanging banner (thin box) under the crossbar.
   const banner = boxMesh(1.4, 1.8, 0.06, bannerColor, 0, poleH - 0.5 - 1.8 / 2 - 0.05, 0);
+  if (bannerTexture) loadOrFallback(bannerTexture, banner.material);
   group.add(banner);
 
   // Collider: one thin box for the pole (players can stand behind it).

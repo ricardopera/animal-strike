@@ -687,10 +687,11 @@ function addUmbrella(group, x, z) {
       new THREE.ConeGeometry(canopyR, canopyH, segs, 1, false, (i / segs) * Math.PI * 2, (Math.PI * 2) / segs),
       mat,
     );
-    // ConeGeometry's tip is at +Y by default; the canopy wants the tip at
-    // -Y so the canopy opens upward like a real umbrella. Flip it.
-    wedge.rotation.x = Math.PI;
-    wedge.position.set(0, 0, 0);
+    // ConeGeometry's apex is at +Y by default with the wide base at -Y — that
+    // is exactly a beach-umbrella canopy (tip up, fabric spreading down to the
+    // rim). Do NOT flip it; a previous `rotation.x = Math.PI` turned the tip
+    // downward into a funnel (inverted umbrella).
+    wedge.position.set(0, canopyH / 2, 0); // sit the rim at the canopyPivot (pole top)
     wedge.castShadow = true; wedge.receiveShadow = false;
     canopyPivot.add(wedge);
   }

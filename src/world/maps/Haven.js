@@ -1,9 +1,20 @@
 import * as THREE from 'three';
 import { MapDefinition } from '../MapDefinition.js';
 import { makeBuildHelper } from '../MapBuildHelper.js';
+import { asset } from '../../config/paths.js';
 import {
   cottage, well, marketStall, haystack, bannerPole, cart, barrel,
 } from '../props/Village.js';
+
+// Themed textures for Haven's cottages, market awnings, and banners. Generated
+// via creative-minimax and applied to prop materials via loadOrFallback (flat
+// color is the fallback while an image loads, or in headless/test environments).
+const TEX = {
+  thatch: asset('/textures/haven/thatch.png'),
+  plaster: asset('/textures/haven/plaster.png'),
+  awning: asset('/textures/haven/awning.png'),
+  banner: asset('/textures/haven/banner.png'),
+};
 
 // Haven — a cozy medieval village square. Cobblestone streets, thatched-roof
 // cottages around a perimeter ring, a central stone well (the focal point),
@@ -202,10 +213,12 @@ function build(scene, colliders, helper) {
   for (const c of cottageSpecs) {
     addProp(cottage, c.x, c.z, {
       w: 6, d: 5, wallColor: COLORS.cottageWall, roofColor: COLORS.cottageRoof,
+      wallTexture: TEX.plaster, roofTexture: TEX.thatch,
     });
     if (c.x !== 0 || c.z !== 0) {
       addProp(cottage, -c.x, -c.z, {
         w: 6, d: 5, wallColor: COLORS.cottageWall, roofColor: COLORS.cottageRoof,
+        wallTexture: TEX.plaster, roofTexture: TEX.thatch,
       });
     }
   }
@@ -214,11 +227,11 @@ function build(scene, colliders, helper) {
   const stallSpecs = [{ x: -10, z: -10 }, { x: 10, z: 10 }];
   for (const s of stallSpecs) {
     addProp(marketStall, s.x, s.z, {
-      frameColor: COLORS.stall, awningColor: COLORS.stallAwning,
+      frameColor: COLORS.stall, awningColor: COLORS.stallAwning, awningTexture: TEX.awning,
     });
     if (s.x !== 0 || s.z !== 0) {
       addProp(marketStall, -s.x, -s.z, {
-        frameColor: COLORS.stall, awningColor: COLORS.stallAwning,
+        frameColor: COLORS.stall, awningColor: COLORS.stallAwning, awningTexture: TEX.awning,
       });
     }
   }
@@ -242,9 +255,9 @@ function build(scene, colliders, helper) {
   // Banner poles (tall decorative banners over the collidable poles).
   const poleSpecs = [{ x: -5, z: -34 }, { x: -34, z: -5 }];
   for (const p of poleSpecs) {
-    addProp(bannerPole, p.x, p.z, { poleColor: COLORS.pole, bannerColor: COLORS.banner });
+    addProp(bannerPole, p.x, p.z, { poleColor: COLORS.pole, bannerColor: COLORS.banner, bannerTexture: TEX.banner });
     if (p.x !== 0 || p.z !== 0) {
-      addProp(bannerPole, -p.x, -p.z, { poleColor: COLORS.pole, bannerColor: COLORS.banner });
+      addProp(bannerPole, -p.x, -p.z, { poleColor: COLORS.pole, bannerColor: COLORS.banner, bannerTexture: TEX.banner });
     }
   }
 
