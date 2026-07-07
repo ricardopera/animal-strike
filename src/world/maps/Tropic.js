@@ -363,9 +363,9 @@ function addTikiRoof(group, x, z) {
     group.add(post);
   }
 
-  // WOVEN-WALL DETAIL — 2 thin horizontal weave bands wrapping each post at
-  // mid-height and upper-third, suggesting palm-frond weave. 4 small dark
-  // slats per post × 4 posts = 16 slats. NON-collidable.
+  // WOVEN-WALL DETAIL — 3 thin horizontal weave bands wrapping each post
+  // (low / mid / upper), suggesting palm-frond weave. 3 bands per post × 4
+  // posts = 12 weaves total. NON-collidable.
   const weaveMat = new THREE.MeshStandardMaterial({ color: weaveColor, flatShading: true, roughness: 0.95 });
   for (const [px, pz] of [[halfW, halfD], [-halfW, halfD], [halfW, -halfD], [-halfW, -halfD]]) {
     for (const wy of [0.7, 1.6, 2.5]) {
@@ -384,7 +384,7 @@ function addTikiRoof(group, x, z) {
   //   3. 8 small "thatch strands" (thin elongated boxes) around the lower
   //      frustum's base — read as the rough edges of dried palm thatch.
   const roofMat = new THREE.MeshStandardMaterial({ color: COLORS.hutRoof, flatShading: true, roughness: 0.95 });
-  const capMat = new THREE.MeshStandardMaterial({ color: COLORS.hutRoof, flatShading: true, roughness: 0.95 });
+  const capMat = roofMat; // same material — no need to allocate twice
   const overhangR = 2.4;       // base radius of lower frustum
   const ridgeR = 0.7;          // top radius of frustum / base radius of cap
   const lowerH = 0.9;
@@ -452,7 +452,7 @@ function addRowboat(group, x, z) {
   const hullMat = new THREE.MeshStandardMaterial({ color: COLORS.boatHull, flatShading: true, roughness: 0.85 });
   const benchMat = new THREE.MeshStandardMaterial({ color: COLORS.boatBench, flatShading: true, roughness: 0.9 });
   const plankMat = new THREE.MeshStandardMaterial({ color: 0x6a3a1e, flatShading: true, roughness: 0.9 });
-  const oarMat = new THREE.MeshStandardMaterial({ color: COLORS.boatBench, flatShading: true, roughness: 0.9 });
+  const oarMat = benchMat; // oars are the same wood as benches — share the material
 
   // Random "beached" rotation — the boat doesn't sit perfectly aligned to the
   // world axes. Deterministic per boat index via Math.sin on (x,z) — no
